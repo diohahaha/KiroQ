@@ -56,19 +56,14 @@ class AnimeTrackerApp(ctk.CTk):
         self.minsize(700, 500)
         self.protocol("WM_DELETE_WINDOW", self._on_close)
 
-        # 图标（EXE 打包后图标已嵌入 .exe，源码运行时从文件加载）
+        # 图标
         try:
             if getattr(sys, 'frozen', False):
-                # PyInstaller 已通过 --icon 嵌入，不需要额外处理
-                pass
+                _ico_path = os.path.join(sys._MEIPASS, "anime_tracker", "kiroq.ico")
             else:
-                _icon_dir = os.path.dirname(os.path.abspath(__file__))
-                _ico_path = os.path.join(_icon_dir, "kiroq.ico")
-                _png_path = os.path.join(_icon_dir, "1.png")
-                if os.path.exists(_ico_path):
-                    self.iconbitmap(_ico_path)
-                elif os.path.exists(_png_path):
-                    self.iconphoto(True, tk.PhotoImage(file=_png_path))
+                _ico_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "kiroq.ico")
+            if os.path.exists(_ico_path):
+                self.iconbitmap(_ico_path)
         except Exception:
             pass
 
