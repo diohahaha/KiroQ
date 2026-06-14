@@ -2,14 +2,24 @@
 
 本地动漫观看进度管理工具 — 番剧文件夹浏览、Bangumi 元数据抓取、观看进度追踪。
 
-## 快速开始
+## 安装
+
+### 方式一：下载 EXE（推荐，无需 Python）
+
+从 [Releases](../../releases) 下载 `KiroQ.exe`，双击运行。数据自动保存在 `C:\Users\<用户名>\.kiroq_data.json`。
+
+> Windows Defender 可能误报，点"更多信息 → 仍要运行"即可。
+
+### 方式二：源码运行
 
 ```bash
+git clone https://github.com/你的用户名/KiroQ.git
+cd KiroQ
 pip install -r requirements.txt
 python anime_tracker/main.py
 ```
 
-或下载 [Releases](../../releases) 中的 `KiroQ.exe` 直接运行。
+可选安装 ffmpeg 以获得精确视频时长统计和视频缩略图。
 
 ## 功能
 

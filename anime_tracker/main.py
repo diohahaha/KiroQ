@@ -1,5 +1,13 @@
 """入口 + App 顶层路由"""
 import os, sys, time, threading, logging
+
+# EXE 打包后需要把自身目录加入搜索路径
+if getattr(sys, 'frozen', False):
+    # PyInstaller 打包后
+    sys.path.insert(0, os.path.join(sys._MEIPASS, 'anime_tracker'))
+else:
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
 from functools import partial
 import customtkinter as ctk
 from tkinter import filedialog
@@ -48,16 +56,19 @@ class AnimeTrackerApp(ctk.CTk):
         self.minsize(700, 500)
         self.protocol("WM_DELETE_WINDOW", self._on_close)
 
-        # 图标
-        import platform as _platform
-        _icon_dir = os.path.dirname(os.path.abspath(__file__))
-        _ico_path = os.path.join(_icon_dir, "kiroq.ico")
-        _png_path = os.path.join(_icon_dir, "1.png")
+        # 图标（EXE 打包后图标已嵌入 .exe，源码运行时从文件加载）
         try:
-            if _platform.system() == "Windows" and os.path.exists(_ico_path):
-                self.iconbitmap(_ico_path)
-            elif os.path.exists(_png_path):
-                self.iconphoto(True, tk.PhotoImage(file=_png_path))
+            if getattr(sys, 'frozen', False):
+                # PyInstaller 已通过 --icon 嵌入，不需要额外处理
+                pass
+            else:
+                _icon_dir = os.path.dirname(os.path.abspath(__file__))
+                _ico_path = os.path.join(_icon_dir, "kiroq.ico")
+                _png_path = os.path.join(_icon_dir, "1.png")
+                if os.path.exists(_ico_path):
+                    self.iconbitmap(_ico_path)
+                elif os.path.exists(_png_path):
+                    self.iconphoto(True, tk.PhotoImage(file=_png_path))
         except Exception:
             pass
 
