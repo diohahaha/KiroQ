@@ -65,4 +65,4 @@ python anime_tracker/main.py
 
 ## License
 
-MIT
+MIT — 详见 [LICENSE](LICENSE)
