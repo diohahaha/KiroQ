@@ -86,6 +86,7 @@ class VideoList:
 
             # 只改状态，不重建
             c["row"].configure(fg_color=bg)
+            c["bg"] = bg
             c["var"].set(fp in self._selected)
             c["cb"].configure(
                 fg_color=t["cb_checked"] if not is_w else t["cb_unchecked"],
@@ -120,13 +121,11 @@ class VideoList:
                              command=partial(self._toggle_select, fp))
         cb.pack(side="left", padx=(8, 4))
 
-        df = fname if len(fname) <= 58 else fname[:56] + "…"
-        lbl = ctk.CTkLabel(row, text=df, font=font(12),
+        lbl = ctk.CTkLabel(row, text=fname, font=font(12),
                            text_color=t["unwatched_text"] if is_w else t["text_main"],
                            anchor="w")
         lbl.pack(side="left", fill="x", expand=True, padx=(2, 0))
-        if len(fname) > 58:
-            Tooltip(lbl, fname)
+        Tooltip(lbl, fname)
 
         lbl_w = ctk.CTkLabel(row, text="已看", font=font(10),
                              text_color=t["watched_text"], width=36)
@@ -139,10 +138,10 @@ class VideoList:
             w.bind("<Double-Button-1>", lambda e, f=open_fn: f())
             w.bind("<Button-3>", rclick_fn)
             w.bind("<Enter>",  lambda e, r=row: r.configure(fg_color=t["row_hover"]))
-            w.bind("<Leave>",  lambda e, r=row, b=bg: r.configure(fg_color=b))
+            w.bind("<Leave>",  lambda e, r=row: r.configure(fg_color=self._row_cache.get(fp, {}).get("bg", bg)))
 
         self._row_cache[fp] = {"row": row, "cb": cb, "var": var,
-                               "lbl": lbl, "lbl_w": lbl_w}
+                               "lbl": lbl, "lbl_w": lbl_w, "bg": bg}
 
     # ── 选择 ────────────────────────────────────────────
     def _toggle_select(self, fp: str):

@@ -297,6 +297,14 @@ def confirm_dialog(parent, title: str, message: str) -> bool:
     dlg.geometry("340x140")
     dlg.resizable(False, False)
     dlg.grab_set(); dlg.lift(); dlg.focus_force()
+    import sys as _sys
+    if getattr(_sys, 'frozen', False):
+        _ico = os.path.join(_sys._MEIPASS, "anime_tracker", "kiroq.ico")
+    else:
+        _ico = os.path.join(os.path.dirname(os.path.abspath(__file__)), "kiroq.ico")
+    if os.path.exists(_ico):
+        dlg.update_idletasks()
+        dlg.iconbitmap(_ico)
     ctk.CTkLabel(dlg, text=message, font=font(13), wraplength=300).pack(pady=(24,16))
     row = ctk.CTkFrame(dlg, fg_color="transparent"); row.pack()
     def ok(): result[0]=True; dlg.destroy()

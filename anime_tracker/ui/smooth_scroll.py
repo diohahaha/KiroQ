@@ -41,6 +41,8 @@ class SmoothScrollFrame(ctk.CTkFrame):
         # 内容尺寸变化 → 更新 scrollregion
         self.content.bind("<Configure>", self._on_content_configure)
         self._canvas.bind("<Configure>", self._on_canvas_configure)
+        # 强制初始化一次 scrollregion，防止首次渲染内容未撑开
+        self.content.bind("<Map>", lambda e: self.after(50, self._force_update_scroll))
 
         # 全局滚轮：在 root 上绑定一次，解绑放在 destroy()
         self._wheel_bound = False
@@ -86,6 +88,11 @@ class SmoothScrollFrame(ctk.CTkFrame):
 
     def _on_content_configure(self, event):
         self._canvas.configure(scrollregion=self._canvas.bbox("all"))
+
+    def _force_update_scroll(self):
+        """首次内容渲染完成后强制刷新 scrollregion"""
+        if self.winfo_exists():
+            self._canvas.configure(scrollregion=self._canvas.bbox("all"))
 
     def _on_canvas_configure(self, event):
         self._canvas.itemconfig(self._win_id, width=event.width)

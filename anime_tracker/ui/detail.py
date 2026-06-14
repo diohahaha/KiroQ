@@ -162,8 +162,7 @@ class DetailPage:
             if unwatched:
                 ep      = unwatched[0]
                 ep_path = np(os.path.join(folder_path, ep))
-                short   = ep if len(ep) <= 40 else ep[:38]+"…"
-                label   = f"▶  继续看：{short}"
+                label   = f"▶  继续看：{ep}"
             else:
                 ep_path = np(os.path.join(folder_path, self._videos[0]))
                 label   = "🔁  重新看"
@@ -192,18 +191,21 @@ class DetailPage:
                          text_color=t["text_dim"], anchor="w"
                          ).pack(anchor="w", pady=(0, 6))
 
-            vl_frame = ctk.CTkFrame(scroll.content, fg_color="transparent")
-            vl_frame.pack(fill="x")
-
             if view_mode == "list":
-                vl = VideoList(vl_frame, self._dm, folder_path,
+                vl = VideoList(None, self._dm, folder_path,
                                list(self._videos),
                                on_open=partial(self._open_video_mark,
                                               folder_path=folder_path),
                                app_win=self._app_win)
                 vl.render_controls(scroll.content)
+                vl_frame = ctk.CTkFrame(scroll.content, fg_color="transparent")
+                vl_frame.pack(fill="both", expand=True)
+                vl._container = vl_frame
+                vl._first_render = True
                 vl.refresh()
             else:
+                vl_frame = ctk.CTkFrame(scroll.content, fg_color="transparent")
+                vl_frame.pack(fill="x")
                 sort_var = ctk.StringVar(value="文件名升序")
                 ctrl = ctk.CTkFrame(scroll.content, fg_color="transparent")
                 ctrl.pack(fill="x", anchor="w", pady=(0, 4))

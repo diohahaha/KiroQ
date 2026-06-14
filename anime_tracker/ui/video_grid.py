@@ -38,6 +38,9 @@ class VideoGrid:
 
         parent_w = self._parent.winfo_width()
         if parent_w < 100:
+            self._parent.update_idletasks()
+            parent_w = self._parent.winfo_width()
+        if parent_w < 100:
             parent_w = 600  # fallback
         col_count = max(2, (parent_w - 40) // (VIDEO_CARD_W + 12))
 

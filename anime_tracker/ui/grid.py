@@ -36,22 +36,23 @@ BATCH_DELAY = 8     # 批次间隔（ms）
 def _calc_cols_and_gap(container_width: int, card_w: int) -> tuple[int, int]:
     """根据容器宽度计算列数和间距
 
+    策略：从 1 列开始往上试，找能放下且 gap >= GAP_MIN 的最大列数。
+    gap 超过 GAP_MAX 时夹住到 GAP_MAX（视觉上不会太松散）。
+
     Returns:
-        (cols, gap)  gap 单位 px，为卡片间距（左右各 gap//2）
+        (cols, gap)  gap 单位 px，左右各 gap//2
     """
     usable = max(container_width - PAD_X * 2, card_w)
-    # 最少 1 列，从最大可能列数往下找合适的 gap
-    max_cols = max(1, (usable + GAP_MAX) // (card_w + GAP_MIN))
-    for cols in range(max_cols, 0, -1):
+    best_cols, best_gap = 1, GAP_MIN
+    for cols in range(1, 100):          # 上限 100 列足够
+        gaps      = cols + 1            # 列间 + 两侧 共 cols+1 段
         total_gap = usable - cols * card_w
-        gap = total_gap // (cols + 1)  # 间距包含两侧
-        if GAP_MIN <= gap <= GAP_MAX:
-            return cols, gap
-        if gap > GAP_MAX:
-            # 间距超上限 → 可以再加一列
-            continue
-    # 兜底
-    return max(1, max_cols), GAP_MIN
+        gap       = total_gap // gaps
+        if gap < GAP_MIN:
+            break                       # 再多一列就太挤，停止
+        best_cols = cols
+        best_gap  = min(gap, GAP_MAX)
+    return best_cols, best_gap
 
 
 class AnimeCard(ctk.CTkFrame):
@@ -233,16 +234,20 @@ class AnimeGrid(ctk.CTkFrame):
         self._root_path     = root_path
         self._pending_dirs  = dir_names
         self._clean_display = clean_display
-        self._do_render()
+        # 双重延迟：after_idle 等布局计算，after(50) 等窗口真正绘制完成
+        self.after_idle(lambda: self.after(50, self._do_render))
 
     # ── 内部渲染 ──────────────────────────────────────
     def _on_resize(self, event):
-        if event.widget is not self:
+        # 用实际宽度变化判断，而不是 event.widget，
+        # 因为子控件 Configure 也会冒泡，但 self.winfo_width() 始终是容器真实宽度
+        new_w = self.winfo_width()
+        if new_w < 10 or new_w == getattr(self, "_last_resize_w", 0):
             return
+        self._last_resize_w = new_w
         if self._resize_job:
             self.after_cancel(self._resize_job)
-        # 防抖 120ms：拖动过程中只记最后一次宽度
-        self._resize_job = self.after(120, self._check_reflow)
+        self._resize_job = self.after(200, self._check_reflow)
 
     def _check_reflow(self):
         """宽度变化后决策：
@@ -274,7 +279,7 @@ class AnimeGrid(ctk.CTkFrame):
             row  = getattr(self._canvas_frame, attr, None)
             if row is None or not row.winfo_exists():
                 continue
-            row.pack_configure(padx=gap)
+            row.pack_configure(anchor="w", padx=gap)
             for col_idx, card in enumerate(row.winfo_children()):
                 pad_left = gap if col_idx > 0 else 0
                 try:
@@ -300,11 +305,10 @@ class AnimeGrid(ctk.CTkFrame):
         self._canvas_frame = ctk.CTkFrame(self, fg_color="transparent")
         self._canvas_frame.pack(fill="both", expand=True)
 
-        # 等容器有实际宽度后再排列
-        self.update_idletasks()
+        # after_idle 之后布局已完成，winfo_width() 可靠
         w = self.winfo_width()
-        if w < 10:
-            w = 800  # 初始估算
+        if w < 100:
+            w = 800  # 兜底（极少触发）
 
         cols, gap = _calc_cols_and_gap(w, CARD_W)
         self._last_cols = cols
@@ -389,7 +393,7 @@ class AnimeGrid(ctk.CTkFrame):
             if row.winfo_exists():
                 return row
         row = ctk.CTkFrame(self._canvas_frame, fg_color="transparent")
-        row.pack(fill="x", padx=gap, pady=0, anchor="w")
+        row.pack(anchor="w", padx=gap, pady=0)
         setattr(self._canvas_frame, attr, row)
         return row
 

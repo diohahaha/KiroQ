@@ -73,8 +73,6 @@ class AnimeTrackerApp(ctk.CTk):
         self._show_clean_names = True   # 默认显示清洗后的短名称
         self._fetch_queue: list[str] = []   # 待自动抓取队列
         self._scanning_durations = False   # 时长扫描防重入
-        self._resize_job = None
-        self._last_width = 0
 
         # 把设置里保存的 ffmpeg 路径注入 utils，避免每次重新探测
         saved_ff = s.get("ffmpeg_path", "")
@@ -85,7 +83,6 @@ class AnimeTrackerApp(ctk.CTk):
 
         self._build_ui()
         self._bind_keys()
-        self.bind("<Configure>", self._on_window_resize, add="+")
 
         root = np(self._dm.data.get("root",""))
         if root and os.path.isdir(root):
@@ -108,20 +105,6 @@ class AnimeTrackerApp(ctk.CTk):
         self.bind("<Control-f>", lambda e: self._navbar.search_entry.focus())
         self.bind("<F5>",        lambda e: self._refresh())
         self.bind("<Escape>",    lambda e: self._search_var.set(""))
-
-    def _on_window_resize(self, event):
-        """窗口宽度变化时防抖刷新（仅主窗口事件）"""
-        if event.widget is not self:
-            return
-        new_w = self.winfo_width()
-        if self._last_width == 0:
-            self._last_width = new_w
-            return
-        if abs(new_w - self._last_width) > 50:
-            self._last_width = new_w
-            if self._resize_job:
-                self.after_cancel(self._resize_job)
-            self._resize_job = self.after(200, self._refresh)
 
     def _clear(self):
         for w in self.content.winfo_children(): w.destroy()
