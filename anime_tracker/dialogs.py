@@ -7,26 +7,10 @@ from functools import partial
 from config import (SCRAPE_SOURCES, STATUS_OPTIONS,
                     THEME_PRESETS, THEME_PRESET_LABELS, THEME_PRESET_KEYS, tc)
 from core.models import FolderMeta
-from utils import font, get_cover_ctk, invalidate_cover, show_toast, confirm_dialog, clean_search_keyword
+from utils import font, get_cover_ctk, invalidate_cover, show_toast, confirm_dialog, clean_search_keyword, set_window_icon
 import bangumi as bgm
 
 log = logging.getLogger(__name__)
-
-def _set_icon(window):
-    """给弹窗设置图标（延迟执行，确保 CTkToplevel 完全初始化后再设置）"""
-    import sys, os
-    if getattr(sys, 'frozen', False):
-        ico = os.path.join(sys._MEIPASS, "anime_tracker", "kiroq.ico")
-    else:
-        ico = os.path.join(os.path.dirname(os.path.abspath(__file__)), "kiroq.ico")
-    if os.path.exists(ico):
-        def _apply():
-            try:
-                if window.winfo_exists():
-                    window.iconbitmap(ico)
-            except Exception:
-                pass
-        window.after(50, _apply)
 
 
 # ── 编辑信息弹窗 ──────────────────────────────────────
@@ -37,7 +21,7 @@ class EditMetaDialog(ctk.CTkToplevel):
         self.geometry("560x660")
         self.resizable(False, False)
         self.grab_set(); self.lift(); self.focus_force()
-        _set_icon(self)
+        set_window_icon(self)
         self._folder  = folder_path
         self._meta    = FolderMeta.from_dict(meta.to_dict())  # 副本
         self._on_save = on_save
@@ -170,7 +154,7 @@ class BangumiSearchDialog(ctk.CTkToplevel):
         self.geometry("580x520")
         self.resizable(False, False)
         self.grab_set(); self.lift(); self.focus_force()
-        _set_icon(self)
+        set_window_icon(self)
         self._folder    = folder_path
         self._on_select = on_select
         self._build(keyword)
@@ -256,7 +240,7 @@ class SettingsDialog(ctk.CTkToplevel):
         self.geometry("500x480")
         self.resizable(False, False)
         self.grab_set(); self.lift(); self.focus_force()
-        _set_icon(self)
+        set_window_icon(self)
         self._s            = dict(settings)
         self._on_save      = on_save
         self._on_refetch   = on_refetch_all

@@ -8,7 +8,6 @@
 anime_tracker/
 ├── main.py                 # 入口：App 类、导航路由、主页、设置回调
 ├── config.py               # 常量、主题颜色系统（THEME_PRESETS→tc()）
-├── data.py                 # JSON 数据读写、文件扫描工具（独立模块）
 ├── utils.py                # 字体、封面图、视频缩略图(ffmpeg)、时长(ffprobe)、PopupMenu、Toast
 ├── dialogs.py              # 编辑元数据、Bangumi 搜索、设置弹窗
 ├── bangumi.py              # Bangumi API 搜索/抓取（bgm.tv）

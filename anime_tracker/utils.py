@@ -126,23 +126,29 @@ def open_folder_explorer(path: str):
 
 
 # ── 视频时长提取 ──────────────────────────────────────
+_ffprobe_lock = threading.Lock()
+
 def _find_ffprobe() -> str | None:
-    """探测 ffprobe，结果缓存"""
+    """探测 ffprobe，结果缓存（线程安全）"""
     if hasattr(_find_ffprobe, "_cached"):
         return _find_ffprobe._cached or None
-    _find_ffprobe._cached = ""
-    import subprocess
-    for p in _FFPROBE_PATHS:
-        try:
-            r = subprocess.run([p, "-version"], capture_output=True, timeout=5)
-            if r.returncode == 0:
-                _find_ffprobe._cached = p
-                log.info(f"ffprobe found: {p}")
-                return p
-        except Exception:
-            continue
-    log.info("ffprobe not found — using 24min estimate")
-    return None
+    with _ffprobe_lock:
+        # 双重检查：拿到锁后可能已被另一个线程填充
+        if hasattr(_find_ffprobe, "_cached"):
+            return _find_ffprobe._cached or None
+        import subprocess
+        for p in _FFPROBE_PATHS:
+            try:
+                r = subprocess.run([p, "-version"], capture_output=True, timeout=5)
+                if r.returncode == 0:
+                    _find_ffprobe._cached = p
+                    log.info(f"ffprobe found: {p}")
+                    return p
+            except Exception:
+                continue
+        _find_ffprobe._cached = ""  # 标记已查找但未找到
+        log.info("ffprobe not found — using 24min estimate")
+        return None
 
 
 def get_video_duration(filepath: str) -> float | None:
@@ -202,6 +208,33 @@ class Tooltip:
                      fg_color=t["row_hover"], corner_radius=6,
                      padx=10, pady=6).pack()
 
+# ── 窗口图标 ────────────────────────────────────────
+def set_window_icon(window):
+    """给 CTkToplevel 设置应用图标（多次尝试确保生效）"""
+    import sys as _sys
+    try:
+        if getattr(_sys, 'frozen', False):
+            ico = os.path.join(_sys._MEIPASS, "anime_tracker", "kiroq.ico")
+        else:
+            ico = os.path.join(os.path.dirname(os.path.abspath(__file__)), "kiroq.ico")
+        if not os.path.exists(ico):
+            return
+        def _apply():
+            try:
+                if window.winfo_exists():
+                    window.iconbitmap(ico)
+            except Exception:
+                pass
+        # 多重保险：不同时间点尝试，确保 CTkToplevel 初始化完毕后图标能设上
+        try: window.iconbitmap(ico)  # 立即可能失败但不碍事
+        except Exception: pass
+        window.after(20, _apply)
+        window.after(120, _apply)
+        window.after(400, _apply)
+    except Exception:
+        pass
+
+
 # ── PopupMenu 基类 ────────────────────────────────────
 class PopupMenu:
     """所有弹出菜单的基类，统一创建/定位/关闭逻辑"""
@@ -219,6 +252,7 @@ class PopupMenu:
 
         self._parent = parent
         self._menu = ctk.CTkToplevel(parent)
+        set_window_icon(self._menu)  # 统一应用图标（Alt+Tab 可见）
         self._menu.overrideredirect(True)
         self._menu.transient(parent)  # 仅保持在父窗口之上，不遮挡其他软件
         if event:
@@ -341,17 +375,7 @@ def confirm_dialog(parent, title: str, message: str) -> bool:
     dlg.geometry("340x140")
     dlg.resizable(False, False)
     dlg.grab_set(); dlg.lift(); dlg.focus_force()
-    import sys as _sys
-    if getattr(_sys, 'frozen', False):
-        _ico = os.path.join(_sys._MEIPASS, "anime_tracker", "kiroq.ico")
-    else:
-        _ico = os.path.join(os.path.dirname(os.path.abspath(__file__)), "kiroq.ico")
-    if os.path.exists(_ico):
-        def _apply_ico(w=dlg, p=_ico):
-            try:
-                if w.winfo_exists(): w.iconbitmap(p)
-            except Exception: pass
-        dlg.after(50, _apply_ico)
+    set_window_icon(dlg)
     ctk.CTkLabel(dlg, text=message, font=font(13), wraplength=300).pack(pady=(24,16))
     row = ctk.CTkFrame(dlg, fg_color="transparent"); row.pack()
     def ok(): result[0]=True; dlg.destroy()

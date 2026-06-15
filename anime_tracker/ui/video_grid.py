@@ -1,4 +1,4 @@
-"""视频文件宫格卡片渲染（自适应列数 + 时长叠加 + 文件名换行）"""
+"""视频文件宫格卡片渲染（自适应列数 + 时长叠加 + 文件名换行 + 多选）"""
 import os
 from functools import partial
 import customtkinter as ctk
@@ -34,8 +34,55 @@ class VideoGrid:
         self._resize_job = None
         self._last_w     = 0
 
+        # ── 多选状态 ──
+        self._select_mode = False
+        self._selected_fps: set[str] = set()
+        self._on_sel_change = None  # callback(count)
+        self._on_enter_select_cb = None  # callback for right-click menu
+
         # 绑定父容器宽度变化，自动重排列数（防抖 200ms）
         self._parent.bind("<Configure>", self._on_resize, add="+")
+
+    # ── 多选 API ──────────────────────────────────────
+    def set_selection_callback(self, cb):
+        self._on_sel_change = cb
+
+    def set_enter_select_callback(self, cb):
+        self._on_enter_select_cb = cb
+
+    def enter_select_mode(self):
+        self._select_mode = True
+        self._selected_fps.clear()
+        self._do_render()
+        if self._on_sel_change:
+            self._on_sel_change(0)
+
+    def exit_select_mode(self):
+        self._select_mode = False
+        self._selected_fps.clear()
+        self._do_render()
+        if self._on_sel_change:
+            self._on_sel_change(-1)
+
+    @property
+    def in_select_mode(self) -> bool:
+        return self._select_mode
+
+    def get_selected(self) -> list[str]:
+        return list(self._selected_fps)
+
+    def select_all(self):
+        for v in self._videos:
+            self._selected_fps.add(np(os.path.join(self._folder_path, v)))
+        self._do_render()
+        if self._on_sel_change:
+            self._on_sel_change(len(self._selected_fps))
+
+    def deselect_all(self):
+        self._selected_fps.clear()
+        self._do_render()
+        if self._on_sel_change:
+            self._on_sel_change(0)
 
     # ── 公共入口 ──────────────────────────────────────
     def render(self, sort_desc: bool = False):
@@ -108,17 +155,24 @@ class VideoGrid:
         for vis_i, v in enumerate(videos):
             full_path = np(os.path.join(self._folder_path, v))
             is_watched = full_path in watched_list
+            is_selected = full_path in self._selected_fps
             row_i, col_i = divmod(vis_i, col_count)
+
+            # 选中卡片边框高亮
+            border_color = t["accent"] if is_selected else t["border"]
+            border_width = 2 if is_selected else 1
+            card_bg = t["bg_card"]
 
             # 卡片：只固定宽度，高度随内容自动延伸（grid sticky="n" 保证行对齐）
             card = ctk.CTkFrame(grid_frame,
                                 width=VIDEO_CARD_W,
                                 corner_radius=10,
-                                fg_color=t["bg_card"],
-                                border_width=1, border_color=t["border"])
+                                fg_color=card_bg,
+                                border_width=border_width,
+                                border_color=border_color)
             card.grid(row=row_i, column=col_i, padx=6, pady=6, sticky="n")
 
-            # ── 缩略图容器（固定尺寸，用于叠加时长标签）──
+            # ── 缩略图容器（固定尺寸，用于叠加时长标签和选择框）──
             thumb_frame = ctk.CTkFrame(card,
                                        width=VIDEO_THUMB_W, height=VIDEO_THUMB_H,
                                        fg_color="transparent", corner_radius=0)
@@ -141,6 +195,21 @@ class VideoGrid:
                 on_ready=_on_thumb_ready, root_widget=thumb_frame)
             self._refs.append(thumb_img)
             thumb_label.configure(image=thumb_img)
+
+            # ── 选择框（左上角叠加，选择模式下显示）──
+            sel_label = None
+            if self._select_mode:
+                if is_selected:
+                    sel_label = ctk.CTkLabel(
+                        thumb_frame, text="✓", font=font(12, "bold"),
+                        text_color="#ffffff", fg_color=t["accent"],
+                        corner_radius=4, width=22, height=22)
+                else:
+                    sel_label = ctk.CTkLabel(
+                        thumb_frame, text="", font=font(12),
+                        text_color=t["text_dim"], fg_color=t["cb_unchecked"],
+                        corner_radius=4, width=22, height=22)
+                sel_label.place(relx=0, rely=0, anchor="nw", x=3, y=3)
 
             # ── 时长叠加（右下角半透明标签）──
             dur = self._dm.get_duration(full_path)
@@ -174,10 +243,15 @@ class VideoGrid:
             for w in (card, thumb_frame, thumb_label):
                 try:
                     Tooltip(w, tip)
-                    w.bind("<Double-Button-1>", partial(self._open, full_path))
-                    w.bind("<Button-3>",        partial(self._rclick, full_path, v))
-                    w.bind("<Enter>",           partial(self._hover, card, True))
-                    w.bind("<Leave>",           partial(self._hover, card, False))
+                    w.bind("<Button-3>", partial(self._rclick, full_path, v))
+                    w.bind("<Enter>",    partial(self._hover, card, True))
+                    w.bind("<Leave>",    partial(self._hover, card, False))
+                    if self._select_mode:
+                        w.bind("<Button-1>",
+                               partial(self._on_select_click, full_path))
+                    else:
+                        w.bind("<Double-Button-1>",
+                               partial(self._open, full_path))
                 except Exception:
                     pass
 
@@ -186,14 +260,38 @@ class VideoGrid:
 
         self._rendering = False
 
+    # ── 选择 ──────────────────────────────────────────
+    def _on_select_click(self, full_path: str, event=None):
+        if not self._select_mode:
+            return
+        if full_path in self._selected_fps:
+            self._selected_fps.discard(full_path)
+        else:
+            self._selected_fps.add(full_path)
+        self._do_render()
+        if self._on_sel_change:
+            self._on_sel_change(len(self._selected_fps))
+
     # ── 右键 / 打开 / 悬停 ────────────────────────────
     def _rclick(self, full_path: str, fname: str, event):
         from ui.menus import VideoContextMenu
+        if self._select_mode and self._selected_fps:
+            if full_path in self._selected_fps:
+                paths = [fp for fp in self._selected_fps
+                         if os.path.exists(fp)]
+            else:
+                paths = [full_path]
+        else:
+            paths = [full_path]
+
         VideoContextMenu(self._app_win or self._parent.winfo_toplevel(),
-                         event, [full_path], self._folder_path,
-                         self._dm, self._do_render, self._app_win)
+                         event, paths, self._folder_path,
+                         self._dm, self._do_render, self._app_win,
+                         on_enter_select=self._on_enter_select_cb)
 
     def _open(self, path, event=None):
+        if self._select_mode:
+            return
         self._on_open(path, self._folder_path)
         self._do_render()
 

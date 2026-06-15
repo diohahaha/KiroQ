@@ -12,6 +12,13 @@
 - 封面图异步加载：主线程先放占位图，后台换真图（每批最多并发 4 张）
 - 所有 after() 定时任务在销毁时取消，避免野指针回调
 - 懒渲染：只渲染可见窗口 + 缓冲区内的卡片（TODO：虚拟化，目前先做批量延迟）
+
+多选模式
+--------
+- 右键菜单 →「☑ 多选」进入选择模式
+- 卡片左上角出现 ☐/☑ 勾选框，点击切换选中
+- 选中卡片边框高亮，底部浮出批量操作栏
+- 完成/Esc 退出选择模式
 """
 
 import os, threading, logging
@@ -87,25 +94,87 @@ class AnimeCard(ctk.CTkFrame):
         self._on_enter   = on_enter
         self._after_ids  = []
 
+        # ── 多选状态 ──
+        self._select_mode = False
+        self._is_selected = False
+        self._on_select_toggle: Callable | None = None
+        self._sel_label: ctk.CTkLabel | None = None
+
         self._build(t, is_hidden, video_count, defer_thumb)
         self._bind_events(on_right_click)
+
+    # ── 选择状态 API ─────────────────────────────────
+    def set_select_mode(self, mode: bool):
+        """进入/退出选择模式（由 AnimeGrid 调用）"""
+        self._select_mode = mode
+        if not mode:
+            self._is_selected = False
+        self._update_select_visual()
+
+    def set_selected(self, selected: bool):
+        """设置选中状态"""
+        self._is_selected = selected
+        self._update_select_visual()
+
+    @property
+    def is_selected(self) -> bool:
+        return self._is_selected
+
+    @property
+    def folder_path(self) -> str:
+        return self._folder
+
+    def _update_select_visual(self):
+        """更新选择框和边框外观"""
+        t = tc()
+        if self._select_mode:
+            # 显示/更新选择框
+            if self._sel_label is None or not self._sel_label.winfo_exists():
+                self._sel_label = ctk.CTkLabel(
+                    self, text="", font=font(12),
+                    text_color=t["text_dim"], fg_color=t["cb_unchecked"],
+                    corner_radius=4, width=22, height=22)
+                self._sel_label.place(x=4, y=4)
+            if self._is_selected:
+                self._sel_label.configure(
+                    text="✓", text_color="#ffffff",
+                    fg_color=t["accent"], font=font(12, "bold"))
+            else:
+                self._sel_label.configure(
+                    text="", text_color=t["text_dim"],
+                    fg_color=t["cb_unchecked"], font=font(12))
+            # 边框
+            if self._is_selected:
+                self.configure(border_color=t["accent"], border_width=2)
+            else:
+                bc = t["border_pin"] if self._dm.is_pinned(self._folder) else t["border"]
+                self.configure(border_color=bc, border_width=1)
+        else:
+            # 隐藏选择框
+            if self._sel_label and self._sel_label.winfo_exists():
+                self._sel_label.place_forget()
+            # 恢复默认边框
+            bc = t["border_pin"] if self._dm.is_pinned(self._folder) else t["border"]
+            self.configure(border_color=bc, border_width=1)
 
     # ── 构建 ─────────────────────────────────────────
     def _build(self, t: dict, is_hidden: bool, video_count: int = 0,
                defer_thumb: bool = False):
         meta      = self._dm.get_meta(self._folder)
 
-        # 封面（异步加载，延迟批次跳过异步提取）
+        # 封面略窄于卡片，露出左右边框（否则边框被封面盖住）
+        _cw = COVER_W - 6
         lbl_img = ctk.CTkLabel(self, text="",
-                                width=COVER_W, height=COVER_H,
+                                width=_cw, height=COVER_H,
                                 corner_radius=8)
-        lbl_img.pack(padx=0, pady=(6, 0), anchor="center")
+        lbl_img.pack(padx=3, pady=(6, 0), anchor="center")
         lbl_img.pack_propagate = lambda *a, **kw: None
         self._lbl_img = lbl_img
+        self._deferred_cover = defer_thumb
+        self._cover_meta = meta.cover
 
         if defer_thumb:
-            # 延迟批次：只用同步封面（快速），不触发后台 ffmpeg
-            cover_img = get_cover_ctk(self._folder, meta.cover, COVER_W, COVER_H,
+            cover_img = get_cover_ctk(self._folder, meta.cover, _cw, COVER_H,
                                        on_ready=None, root_widget=None)
         else:
             def _on_cover_ready(img, lbl=lbl_img):
@@ -115,7 +184,7 @@ class AnimeCard(ctk.CTkFrame):
                         self._image_refs.append(img)
                 except Exception:
                     pass
-            cover_img = get_cover_ctk(self._folder, meta.cover, COVER_W, COVER_H,
+            cover_img = get_cover_ctk(self._folder, meta.cover, _cw, COVER_H,
                                        on_ready=_on_cover_ready, root_widget=self)
         self._image_refs.append(cover_img)
         lbl_img.configure(image=cover_img)
@@ -136,7 +205,6 @@ class AnimeCard(ctk.CTkFrame):
                          fg_color=t["accent"]).place(x=0, y=0)
 
         # 标题颜色（看过的暗一点）
-        watched = len(self._dm.data["watched"].get(self._folder, []))
         name_color = t["watched_text"] if watched > 0 else t["text_main"]
         if is_hidden:
             name_color = t["text_dim"]
@@ -165,8 +233,22 @@ class AnimeCard(ctk.CTkFrame):
             tooltip_text = f"{self._name}\n{meta.name}"
         Tooltip(self, tooltip_text)
 
-        # 封面异步刷新（当 get_cover_ctk 返回占位图时）
-        self._lbl_img = lbl_img
+    def _load_deferred_cover(self):
+        """后台空闲时加载被延迟的封面"""
+        if not self._deferred_cover:
+            return
+        self._deferred_cover = False
+        lbl = self._lbl_img
+        def _on_ready(img, l=lbl):
+            try:
+                if l.winfo_exists():
+                    l.configure(image=img)
+                    self._image_refs.append(img)
+            except Exception:
+                pass
+        img = get_cover_ctk(self._folder, self._cover_meta, COVER_W - 6, COVER_H,
+                             on_ready=_on_ready, root_widget=self)
+        self._image_refs.append(img)  # 占位图还在，这个会刷新
 
     def refresh_cover(self, ctk_img):
         """后台封面加载完成后由主线程调用"""
@@ -180,24 +262,35 @@ class AnimeCard(ctk.CTkFrame):
     # ── 事件 ─────────────────────────────────────────
     def _bind_events(self, on_right_click: Callable):
         def enter(_=None):
+            if self._select_mode:
+                # 选择模式下点击 → 切换选中
+                if self._on_select_toggle:
+                    self._on_select_toggle(self._folder)
+                return
             self._on_enter(self._folder,
                            self._dm.get_meta(self._folder).name or
                            os.path.basename(self._folder))
 
         def hover_in(_=None):
             t = tc()
+            if self._is_selected:
+                return  # 选中状态保持不变
             self.configure(border_color=t["border_hover"],
                            fg_color=t["hover"])
 
         def hover_out(_=None):
             t = tc()
+            if self._is_selected:
+                self.configure(border_color=t["accent"], border_width=2)
+                return
             bc = t["border_pin"] if self._dm.is_pinned(self._folder) else t["border"]
             self.configure(border_color=bc, fg_color=t["bg_card"])
 
         def rclick(e):
             on_right_click(e, self._folder,
                            self._dm.get_meta(self._folder).name or
-                           os.path.basename(self._folder))
+                           os.path.basename(self._folder),
+                           self._is_selected)
 
         for w in self.winfo_children() + [self]:
             try:
@@ -247,7 +340,81 @@ class AnimeGrid(ctk.CTkFrame):
         self._root_path    = ""
         self._clean_display = True
 
+        # ── 多选状态 ──
+        self._select_mode = False
+        self._selected_paths: set[str] = set()
+        self._on_sel_change: Callable | None = None  # callback(count)
+        self._cards: list[AnimeCard] = []  # 当前所有卡片引用
+
         self.bind("<Configure>", self._on_resize, add="+")
+
+    # ── 多选 API ──────────────────────────────────────
+    def set_selection_callback(self, cb):
+        self._on_sel_change = cb
+
+    def enter_select_mode(self):
+        """进入多选模式"""
+        self._select_mode = True
+        self._selected_paths.clear()
+        for card in self._cards:
+            if card.winfo_exists():
+                card.set_select_mode(True)
+                card._on_select_toggle = self._on_card_select_toggle
+        if self._on_sel_change:
+            self._on_sel_change(0)
+
+    def exit_select_mode(self):
+        """退出多选模式"""
+        self._select_mode = False
+        self._selected_paths.clear()
+        for card in self._cards:
+            if card.winfo_exists():
+                card.set_select_mode(False)
+                card._on_select_toggle = None
+        if self._on_sel_change:
+            self._on_sel_change(-1)
+
+    @property
+    def in_select_mode(self) -> bool:
+        return self._select_mode
+
+    def get_selected(self) -> list[str]:
+        return [fp for fp in self._selected_paths
+                if os.path.isdir(fp)]
+
+    def select_all(self):
+        for card in self._cards:
+            if card.winfo_exists():
+                self._selected_paths.add(card.folder_path)
+                card.set_selected(True)
+        if self._on_sel_change:
+            self._on_sel_change(len(self._selected_paths))
+
+    def deselect_all(self):
+        self._selected_paths.clear()
+        for card in self._cards:
+            if card.winfo_exists():
+                card.set_selected(False)
+        if self._on_sel_change:
+            self._on_sel_change(0)
+
+    def _on_card_select_toggle(self, folder_path: str):
+        """卡片被点击时切换选中"""
+        if folder_path in self._selected_paths:
+            self._selected_paths.discard(folder_path)
+            # 找到对应卡片更新视觉
+            for card in self._cards:
+                if card.folder_path == folder_path and card.winfo_exists():
+                    card.set_selected(False)
+                    break
+        else:
+            self._selected_paths.add(folder_path)
+            for card in self._cards:
+                if card.folder_path == folder_path and card.winfo_exists():
+                    card.set_selected(True)
+                    break
+        if self._on_sel_change:
+            self._on_sel_change(len(self._selected_paths))
 
     # ── 公共 API ─────────────────────────────────────
     def render(self, root_path: str, dir_names: list[str],
@@ -273,13 +440,9 @@ class AnimeGrid(ctk.CTkFrame):
             except Exception: pass
         self._after_ids.clear()
 
-        # ④ 取消上次 render 注册但尚未执行的 after_idle（防多次快速调用时堆积）
-        if self._render_idle_id:
-            try: self.after_cancel(self._render_idle_id)
-            except Exception: pass
-            self._render_idle_id = None
-
-        self._render_idle_id = self.after_idle(self._do_render)
+        # 确保布局完成后再渲染
+        self.update_idletasks()
+        self._do_render()
 
     # ── 内部渲染 ──────────────────────────────────────
     def _on_resize(self, event):
@@ -293,24 +456,26 @@ class AnimeGrid(ctk.CTkFrame):
         self._last_resize_w = new_w
         if self._resize_job:
             self.after_cancel(self._resize_job)
-        self._resize_job = self.after(200, self._check_reflow)
+        self._resize_job = self.after(250, self._check_reflow)
 
     def _check_reflow(self):
         """宽度变化后决策：
-        - 列数不变 → 只更新间距（pack_configure，极快，不销毁任何控件）
-        - 列数改变 → 就地重排（移动卡片到新行，不销毁重建）
+        - 列数不变 → 只更新间距
+        - 列数改变 → 完全重建（_reflow 有 bug，暂用 _do_render）
         """
         self._resize_job = None
+        if self._rendering:
+            return
         w = self.winfo_width()
-        if w < 10:
+        if w < 50:
             return
         cols, gap = _calc_cols_and_gap(w, CARD_W)
         if cols == self._last_cols:
             if abs(gap - self._last_gap) >= 1:
                 self._adjust_gap(cols, gap)
         else:
-            # 列数变了：就地重排，避免销毁重建导致的闪烁
-            self._reflow(cols, gap)
+            self._last_resize_w = 0  # 强制下次不跳过
+            self._do_render()
 
     def _adjust_gap(self, cols: int, gap: int):
         """就地更新所有行容器和卡片的间距，不销毁/重建任何控件"""
@@ -376,13 +541,21 @@ class AnimeGrid(ctk.CTkFrame):
             pad_left = gap if c > 0 else 0
             card.pack(in_=row_frame, side='left',
                       padx=(pad_left, 0), pady=(gap // 2, gap // 2))
-        # reflow 完成后更新 _last_resize_w，防止对同一宽度触发第二次重排
         self._last_resize_w = self.winfo_width()
-        self.after(0, lambda: setattr(self, "_rendering", False))
+        self._rendering = False
 
     def _do_render(self):
         """清空并重新布局所有卡片"""
-        self._render_idle_id = None   # 已执行，清除引用
+        # 重入保护
+        if getattr(self, '_in_render', False):
+            self._render_idle_id = self.after(50, self._do_render)
+            return
+        self._in_render = True
+        self._render_idle_id = None
+        if hasattr(self, '_render_fallback'):
+            try: self.after_cancel(self._render_fallback)
+            except Exception: pass
+            self._render_fallback = None
         self._rendering = True
         # 取消所有挂起的 after 任务
         for aid in self._after_ids:
@@ -417,46 +590,90 @@ class AnimeGrid(ctk.CTkFrame):
         self._last_gap      = gap
         self._last_resize_w = w   # 记录本次渲染宽度，防止渲染后立即触发 _check_reflow
 
+        # 重置卡片引用列表
+        self._cards.clear()
+
         if not self._pending_dirs:
             t = tc()
             ctk.CTkLabel(self._canvas_frame,
                          text="这里还没有番剧",
                          font=font(13), text_color=t["empty_text"]).pack(pady=40)
             self._rendering = False
+            self._in_render = False
             return
 
         self._prefetch_and_render(cols, gap)
+        self._in_render = False
 
     def _retry_render(self, attempt: int):
         """宽度还没到位：16ms 后重试，最多 5 次"""
         if attempt > 5:
-            w = max(self._last_resize_w, 800)
+            root = self.winfo_toplevel()
+            w = max(self._last_resize_w, root.winfo_width() - 120, 800)
             cols, gap = _calc_cols_and_gap(w, CARD_W)
             self._last_cols = cols
             self._last_gap  = gap
             self._last_resize_w = w
             if self._pending_dirs:
                 self._prefetch_and_render(cols, gap)
-            else:
-                self._rendering = False
+            self._rendering = False
+            self._in_render = False
             return
         self._render_idle_id = self.after(16,
             lambda: self._do_render())
 
+    # ── 缩略图懒加载：空闲时逐步补全延迟的缩略图 ──
+    _lazy_thumb_job = None
+    _lazy_thumb_idx = 0
+
+    def _start_lazy_thumbs(self, total: int):
+        """首批渲染完，后台逐步加载剩余缩略图"""
+        self._lazy_thumb_idx = min(total, BATCH_SIZE)
+        self._schedule_lazy_thumbs()
+
+    def _schedule_lazy_thumbs(self):
+        if self._lazy_thumb_job:
+            self.after_cancel(self._lazy_thumb_job)
+        self._lazy_thumb_job = self.after(200, self._load_next_thumb_batch)
+
+    def _load_next_thumb_batch(self):
+        """加载下一批延迟的缩略图（每批 10 张）"""
+        if not (self._canvas_frame and self._canvas_frame.winfo_exists()):
+            return
+        loaded = 0
+        for row_idx in range(100):
+            row = getattr(self._canvas_frame, f'_row_{row_idx}', None)
+            if row is None or not row.winfo_exists():
+                break
+            for card in row.winfo_children():
+                if self._lazy_thumb_idx <= 0:
+                    self._lazy_thumb_idx -= 1
+                    continue
+                self._lazy_thumb_idx -= 1
+                if hasattr(card, '_load_deferred_cover'):
+                    card._load_deferred_cover()
+                    loaded += 1
+                    if loaded >= 10:
+                        if self._lazy_thumb_idx > 0:
+                            self._schedule_lazy_thumbs()
+                        return
+        # 没卡了，结束
+
     def _prefetch_and_render(self, cols: int, gap: int):
         """批量预取视频数并分批渲染"""
-        # ── 批量预取视频数（一次遍历，避免 per-card scandir）──
         self._video_counts: dict[str, int] = {}
         for d in self._pending_dirs:
             fp = os.path.normpath(os.path.join(self._root_path, d))
             try:
-                from data import get_video_files
+                from core.data_manager import get_video_files
                 self._video_counts[fp] = len(get_video_files(fp))
             except Exception:
                 self._video_counts[fp] = 0
 
-        # 分批渲染，避免一次性创建数百个控件卡主线程
         self._render_batch(self._pending_dirs, cols, gap, 0)
+        # 首批渲染完成后，后台空闲加载剩余缩略图
+        if len(self._pending_dirs) > BATCH_SIZE:
+            self._start_lazy_thumbs(len(self._pending_dirs))
 
     def _render_batch(self, dirs: list[str], cols: int, gap: int, start: int):
         """分批次延迟渲染卡片（每批 BATCH_SIZE 张）"""
@@ -500,6 +717,15 @@ class AnimeGrid(ctk.CTkFrame):
                 video_count=self._video_counts.get(fp, 0),
                 defer_thumb=defer_thumb,
             )
+            # 如果在选择模式，设置卡片状态
+            if self._select_mode:
+                card.set_select_mode(True)
+                card._on_select_toggle = self._on_card_select_toggle
+                if fp in self._selected_paths:
+                    card.set_selected(True)
+
+            self._cards.append(card)
+
             # 左右间距（第一张不加左间距）
             pad_left  = gap if col_idx > 0 else 0
             pad_right = 0

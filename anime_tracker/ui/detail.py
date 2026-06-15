@@ -1,14 +1,16 @@
 """文件夹详情页"""
-import os, webbrowser
+import os, webbrowser, threading, logging
 from functools import partial
 import customtkinter as ctk
-from utils import font, get_cover_ctk, clean_search_keyword
+from utils import font, get_cover_ctk, clean_search_keyword, get_video_duration, show_toast
 from config import SORT_OPTIONS, tc
 from core.data_manager import get_display_name, scan_folder, np
 from ui.video_list import VideoList
 from ui.video_grid import VideoGrid
 from ui.menus import SortMenu, MoreMenu
 from ui.smooth_scroll import SmoothScrollFrame
+
+log = logging.getLogger(__name__)
 
 
 class DetailPage:
@@ -18,12 +20,18 @@ class DetailPage:
                  render_grid_fn):
         self._parent        = parent
         self._dm            = dm
+        self._scanning_durations = False
         self._refs          = image_refs
         self._on_enter      = on_enter_folder
         self._on_open_video = on_open_video
         self._on_edit       = on_edit_meta
         self._app_win       = app_win
         self._render_grid   = render_grid_fn
+
+        # ── 多选状态 ──
+        self._video_list: VideoList | None = None
+        self._video_grid: VideoGrid | None = None
+        self._select_bar: ctk.CTkFrame | None = None
 
     # ── 主渲染入口 ────────────────────────────────────
     def render(self, folder_path: str, clean_display: bool = False):
@@ -32,11 +40,15 @@ class DetailPage:
         self._meta          = self._dm.get_meta(self._folder_path)
         self._subdirs, self._videos = scan_folder(self._folder_path)
         self._render_full()
+        self._start_duration_scan()
 
     def _render_full(self):
         """完整渲染（首次进入时调用）"""
         for w in self._parent.winfo_children():
             w.destroy()
+        self._video_list = None
+        self._video_grid = None
+        self._select_bar = None
         self._render_header()
         self._render_content()
 
@@ -46,7 +58,167 @@ class DetailPage:
         children = self._parent.winfo_children()
         for w in children[1:]:
             w.destroy()
+        self._video_list = None
+        self._video_grid = None
+        self._select_bar = None
         self._render_content()
+
+    # ── 多选操作栏 ────────────────────────────────────
+    def _show_select_bar(self, count: int):
+        """显示/更新底部选择操作栏"""
+        if count < 0:
+            # -1 = 隐藏
+            self._hide_select_bar()
+            return
+
+        t = tc()
+        if self._select_bar and self._select_bar.winfo_exists():
+            # 更新计数
+            for w in self._select_bar.winfo_children():
+                if hasattr(w, '_is_count_label') and w._is_count_label:
+                    w.configure(text=f"已选 {count} 项")
+                    break
+            # 更新按钮状态
+            for w in self._select_bar.winfo_children():
+                if hasattr(w, '_is_batch_btn'):
+                    w.configure(state="normal" if count > 0 else "disabled")
+            return
+
+        # 创建操作栏
+        self._select_bar = ctk.CTkFrame(
+            self._parent, height=44, corner_radius=0,
+            fg_color=t["bg_toolbar"], border_width=1, border_color=t["border"])
+        self._select_bar.pack(side="bottom", fill="x", before=self._parent.winfo_children()[0])
+        self._select_bar.pack_propagate(False)
+
+        lbl = ctk.CTkLabel(self._select_bar, text=f"已选 {count} 项",
+                           font=font(12), text_color=t["text_main"])
+        lbl._is_count_label = True
+        lbl.pack(side="left", padx=12)
+
+        # 全选
+        def do_select_all():
+            if self._video_list:
+                self._video_list.select_all()
+            elif self._video_grid:
+                self._video_grid.select_all()
+
+        btn_all = ctk.CTkButton(self._select_bar, text="全选", width=60, height=28,
+                                fg_color=t["btn_toggle_a"], hover_color=t["hover"],
+                                font=font(11), command=do_select_all)
+        btn_all.pack(side="left", padx=(0, 4), pady=8)
+
+        # 取消选择
+        def do_deselect():
+            if self._video_list:
+                self._video_list.deselect_all()
+            elif self._video_grid:
+                self._video_grid.deselect_all()
+
+        ctk.CTkButton(self._select_bar, text="取消", width=60, height=28,
+                      fg_color=t["btn_toggle_a"], hover_color=t["hover"],
+                      font=font(11), command=do_deselect
+                      ).pack(side="left", padx=(0, 8), pady=8)
+
+        # 标记已看
+        def mark_watched():
+            paths = self._get_video_selected()
+            for fp in paths:
+                self._dm.mark_watched(fp, self._folder_path)
+            self._dm.save()
+            show_toast(self._app_win, f"✓ {len(paths)} 个文件已标记为已看")
+            self._exit_video_select()
+
+        btn_w = ctk.CTkButton(self._select_bar, text="✓ 标记已看", width=90, height=28,
+                              fg_color=t["btn_toggle_a"], hover_color=t["hover"],
+                              font=font(11), command=mark_watched)
+        btn_w._is_batch_btn = True
+        btn_w.pack(side="left", padx=4, pady=8)
+
+        # 标记未看
+        def mark_unwatched():
+            paths = self._get_video_selected()
+            for fp in paths:
+                watched = self._dm.data["watched"].get(self._folder_path, [])
+                if fp in watched:
+                    watched.remove(fp)
+            self._dm.save()
+            show_toast(self._app_win, f"✓ {len(paths)} 个文件已标记为未看")
+            self._exit_video_select()
+
+        btn_uw = ctk.CTkButton(self._select_bar, text="✗ 标记未看", width=90, height=28,
+                               fg_color=t["btn_toggle_a"], hover_color=t["hover"],
+                               font=font(11), command=mark_unwatched)
+        btn_uw._is_batch_btn = True
+        btn_uw.pack(side="left", padx=4, pady=8)
+
+        # 完成按钮
+        def finish():
+            self._exit_video_select()
+
+        ctk.CTkButton(self._select_bar, text="完成", width=60, height=28,
+                      fg_color=t["accent"], hover_color=t["btn_hover"],
+                      font=font(11, "bold"), command=finish
+                      ).pack(side="right", padx=12, pady=8)
+
+    def _hide_select_bar(self):
+        if self._select_bar and self._select_bar.winfo_exists():
+            self._select_bar.destroy()
+        self._select_bar = None
+
+    def _get_video_selected(self) -> list[str]:
+        if self._video_list:
+            return self._video_list.get_selected()
+        elif self._video_grid:
+            return self._video_grid.get_selected()
+        return []
+
+    def _enter_video_select(self):
+        """右键菜单 → 多选 → 进入选择模式"""
+        if self._video_list:
+            self._video_list.enter_select_mode()
+        elif self._video_grid:
+            self._video_grid.enter_select_mode()
+
+    def _exit_video_select(self):
+        """退出视频多选模式"""
+        if self._video_list:
+            self._video_list.exit_select_mode()
+        elif self._video_grid:
+            self._video_grid.exit_select_mode()
+        self._hide_select_bar()
+
+    # ── 后台时长扫描 ──────────────────────────────────
+    def _start_duration_scan(self):
+        """后台扫描当前文件夹中未缓存时长的视频"""
+        if self._scanning_durations:
+            return
+        to_scan = []
+        for v in self._videos:
+            fp = np(os.path.join(self._folder_path, v))
+            dur = self._dm.get_duration(fp)
+            if dur is None or dur == -1:
+                to_scan.append(fp)
+        if not to_scan:
+            return
+
+        self._scanning_durations = True
+        log.info(f"duration scan: {len(to_scan)} files in current folder")
+
+        def run():
+            scanned = 0
+            for fp in to_scan:
+                dur = get_video_duration(fp)
+                self._dm.set_duration(fp, dur if dur is not None else -1)
+                scanned += 1
+                log.info(f"scanned ({scanned}/{len(to_scan)}): {os.path.basename(fp)[:50]}... = {dur}")
+            self._scanning_durations = False
+            self._dm.flush()
+            log.info(f"duration scan done: {scanned} files")
+            if scanned > 0:
+                self._parent.after(0, self._refresh_content)
+
+        threading.Thread(target=run, daemon=True).start()
 
     # ── 顶部详情栏 ────────────────────────────────────
     def _render_header(self):
@@ -211,6 +383,10 @@ class DetailPage:
                                on_open=partial(self._open_video_mark,
                                               folder_path=folder_path),
                                app_win=self._app_win)
+                vl.set_selection_callback(self._show_select_bar)
+                vl.set_enter_select_callback(self._enter_video_select)
+                self._video_list = vl
+
                 vl.render_controls(scroll.content)
                 vl_frame = ctk.CTkFrame(scroll.content, fg_color="transparent")
                 vl_frame.pack(fill="both", expand=True)
@@ -235,6 +411,9 @@ class DetailPage:
                                list(self._videos), self._refs,
                                on_open=self._open_video_grid,
                                app_win=self._app_win)
+                vg.set_selection_callback(self._show_select_bar)
+                vg.set_enter_select_callback(self._enter_video_select)
+                self._video_grid = vg
                 vg.render(sort_desc=("降序" in sort_var.get()))
 
         # ── 子文件夹（放在视频下面）──

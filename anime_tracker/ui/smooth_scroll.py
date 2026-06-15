@@ -88,16 +88,12 @@ class SmoothScrollFrame(ctk.CTkFrame):
         self._canvas.configure(scrollregion=self._canvas.bbox("all"))
 
     def _on_canvas_configure(self, event):
-        # 防抖：Canvas 宽度变化时不立即 resize，等 50ms 稳定后再调整
-        if hasattr(self, '_resize_job_c') and self._resize_job_c:
-            try: self.after_cancel(self._resize_job_c)
-            except Exception: pass
-        w = event.width
-        self._resize_job_c = self.after(50, lambda: self._apply_canvas_width(w))
+        """Canvas 宽度变化时立即同步（0 宽跳过，等下次有效值）"""
+        if event.width > 0:
+            self._apply_canvas_width(event.width)
 
     def _apply_canvas_width(self, w: int):
-        self._resize_job_c = None
-        if self.winfo_exists():
+        if self.winfo_exists() and w > 0:
             self._canvas.itemconfig(self._win_id, width=w)
 
     def _on_scrollbar(self, *args):
