@@ -13,7 +13,7 @@
 ### 方式二：源码运行
 
 ```bash
-git clone https://github.com/blame-dev/KiroQ.git
+git clone https://github.com/diohahaha/KiroQ.git
 cd KiroQ
 pip install -r requirements.txt
 python anime_tracker/main.py
