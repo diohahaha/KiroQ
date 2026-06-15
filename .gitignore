@@ -8,6 +8,12 @@ __pycache__/
 *.kiroq_data.json.bak
 *.kiroq.log
 
+# 缩略图缓存
+*.anime_tracker_thumbs/
+
+# ffmpeg 二进制（build.bat 自动下载）
+anime_tracker/bin/
+
 # 开发文件
 bug.txt
 

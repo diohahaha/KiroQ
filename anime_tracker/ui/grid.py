@@ -68,7 +68,8 @@ class AnimeCard(ctk.CTkFrame):
     def __init__(self, parent, folder_path: str, display_name: str,
                  dm, image_refs: list,
                  on_enter: Callable, on_right_click: Callable,
-                 is_hidden: bool = False, video_count: int = 0):
+                 is_hidden: bool = False, video_count: int = 0,
+                 defer_thumb: bool = False):
         t = tc()
         border = t["border_pin"] if dm.is_pinned(folder_path) else t["border"]
         bg     = t["hidden_card"] if is_hidden else t["bg_card"]
@@ -86,20 +87,38 @@ class AnimeCard(ctk.CTkFrame):
         self._on_enter   = on_enter
         self._after_ids  = []
 
-        self._build(t, is_hidden, video_count)
+        self._build(t, is_hidden, video_count, defer_thumb)
         self._bind_events(on_right_click)
 
     # ── 构建 ─────────────────────────────────────────
-    def _build(self, t: dict, is_hidden: bool, video_count: int = 0):
+    def _build(self, t: dict, is_hidden: bool, video_count: int = 0,
+               defer_thumb: bool = False):
         meta      = self._dm.get_meta(self._folder)
-        cover_img = get_cover_ctk(self._folder, meta.cover, COVER_W, COVER_H)
-        self._image_refs.append(cover_img)
 
-        # 封面
-        lbl_img = ctk.CTkLabel(self, image=cover_img, text="",
+        # 封面（异步加载，延迟批次跳过异步提取）
+        lbl_img = ctk.CTkLabel(self, text="",
                                 width=COVER_W, height=COVER_H,
                                 corner_radius=8)
-        lbl_img.pack(padx=0, pady=(6, 0))
+        lbl_img.pack(padx=0, pady=(6, 0), anchor="center")
+        lbl_img.pack_propagate = lambda *a, **kw: None
+        self._lbl_img = lbl_img
+
+        if defer_thumb:
+            # 延迟批次：只用同步封面（快速），不触发后台 ffmpeg
+            cover_img = get_cover_ctk(self._folder, meta.cover, COVER_W, COVER_H,
+                                       on_ready=None, root_widget=None)
+        else:
+            def _on_cover_ready(img, lbl=lbl_img):
+                try:
+                    if lbl.winfo_exists():
+                        lbl.configure(image=img)
+                        self._image_refs.append(img)
+                except Exception:
+                    pass
+            cover_img = get_cover_ctk(self._folder, meta.cover, COVER_W, COVER_H,
+                                       on_ready=_on_cover_ready, root_widget=self)
+        self._image_refs.append(cover_img)
+        lbl_img.configure(image=cover_img)
 
         # 进度条：使用预取的 video_count，避免 per-card 磁盘 I/O
         watched_list = self._dm.data["watched"].get(self._folder, [])
@@ -219,8 +238,11 @@ class AnimeGrid(ctk.CTkFrame):
 
         # 响应容器宽度变化（防抖 200ms）
         self._resize_job: str | None = None
+        self._render_idle_id: str | None = None   # 保存 after_idle id，防止堆积
         self._last_cols   = 0
         self._last_gap    = 0
+        self._last_resize_w = 0
+        self._rendering   = False   # 渲染中屏蔽 resize 事件
         self._pending_dirs: list[str] = []
         self._root_path    = ""
         self._clean_display = True
@@ -234,11 +256,35 @@ class AnimeGrid(ctk.CTkFrame):
         self._root_path     = root_path
         self._pending_dirs  = dir_names
         self._clean_display = clean_display
-        # 双重延迟：after_idle 等布局计算，after(50) 等窗口真正绘制完成
-        self.after_idle(lambda: self.after(50, self._do_render))
+        self._last_cols     = 0
+        self._last_gap      = 0
+
+        # ① 立即屏蔽 resize，防止 after_idle 执行前与 _check_reflow 产生竞态
+        self._rendering = True
+
+        # ② 取消挂起的 resize 防抖任务
+        if self._resize_job:
+            self.after_cancel(self._resize_job)
+            self._resize_job = None
+
+        # ③ 取消挂起的批量渲染任务（切换文件夹时中止旧批次）
+        for aid in self._after_ids:
+            try: self.after_cancel(aid)
+            except Exception: pass
+        self._after_ids.clear()
+
+        # ④ 取消上次 render 注册但尚未执行的 after_idle（防多次快速调用时堆积）
+        if self._render_idle_id:
+            try: self.after_cancel(self._render_idle_id)
+            except Exception: pass
+            self._render_idle_id = None
+
+        self._render_idle_id = self.after_idle(self._do_render)
 
     # ── 内部渲染 ──────────────────────────────────────
     def _on_resize(self, event):
+        if self._rendering:
+            return   # 主动渲染期间忽略 Configure 事件
         # 用实际宽度变化判断，而不是 event.widget，
         # 因为子控件 Configure 也会冒泡，但 self.winfo_width() 始终是容器真实宽度
         new_w = self.winfo_width()
@@ -252,7 +298,7 @@ class AnimeGrid(ctk.CTkFrame):
     def _check_reflow(self):
         """宽度变化后决策：
         - 列数不变 → 只更新间距（pack_configure，极快，不销毁任何控件）
-        - 列数改变 → 完整重建（_do_render）
+        - 列数改变 → 就地重排（移动卡片到新行，不销毁重建）
         """
         self._resize_job = None
         w = self.winfo_width()
@@ -260,12 +306,11 @@ class AnimeGrid(ctk.CTkFrame):
             return
         cols, gap = _calc_cols_and_gap(w, CARD_W)
         if cols == self._last_cols:
-            # 快路径：只调整行/卡片的 padding，无需重建
             if abs(gap - self._last_gap) >= 1:
                 self._adjust_gap(cols, gap)
         else:
-            # 列数变了才完整重建
-            self._do_render()
+            # 列数变了：就地重排，避免销毁重建导致的闪烁
+            self._reflow(cols, gap)
 
     def _adjust_gap(self, cols: int, gap: int):
         """就地更新所有行容器和卡片的间距，不销毁/重建任何控件"""
@@ -290,8 +335,55 @@ class AnimeGrid(ctk.CTkFrame):
                 except Exception:
                     pass
 
+    def _reflow(self, cols: int, gap: int):
+        """列数变化时就地重排：收集所有卡片，按新列数重新 pack，不销毁任何控件"""
+        self._rendering = True
+        if not (self._canvas_frame and self._canvas_frame.winfo_exists()):
+            self._do_render()
+            return
+
+        # 收集所有行里的卡片（按原顺序）
+        cards = []
+        row_idx = 0
+        while True:
+            row = getattr(self._canvas_frame, f'_row_{row_idx}', None)
+            if row is None or not row.winfo_exists():
+                break
+            cards.extend(row.winfo_children())
+            row_idx += 1
+
+        if not cards:
+            self._do_render()
+            return
+
+        # 销毁旧行容器（卡片先 pack_forget 脱离父控件）
+        for card in cards:
+            card.pack_forget()
+        for i in range(row_idx):
+            row = getattr(self._canvas_frame, f'_row_{i}', None)
+            if row and row.winfo_exists():
+                row.destroy()
+            try: delattr(self._canvas_frame, f'_row_{i}')
+            except Exception: pass
+
+        # 按新列数重新排列
+        self._last_cols = cols
+        self._last_gap  = gap
+        for idx, card in enumerate(cards):
+            r = idx // cols
+            c = idx % cols
+            row_frame = self._get_or_create_row(r, gap)
+            pad_left = gap if c > 0 else 0
+            card.pack(in_=row_frame, side='left',
+                      padx=(pad_left, 0), pady=(gap // 2, gap // 2))
+        # reflow 完成后更新 _last_resize_w，防止对同一宽度触发第二次重排
+        self._last_resize_w = self.winfo_width()
+        self.after(0, lambda: setattr(self, "_rendering", False))
+
     def _do_render(self):
         """清空并重新布局所有卡片"""
+        self._render_idle_id = None   # 已执行，清除引用
+        self._rendering = True
         # 取消所有挂起的 after 任务
         for aid in self._after_ids:
             try: self.after_cancel(aid)
@@ -303,24 +395,56 @@ class AnimeGrid(ctk.CTkFrame):
             self._canvas_frame.destroy()
 
         self._canvas_frame = ctk.CTkFrame(self, fg_color="transparent")
-        self._canvas_frame.pack(fill="both", expand=True)
+        self._canvas_frame.pack(fill="x", anchor="nw")
 
-        # after_idle 之后布局已完成，winfo_width() 可靠
+        # 强制同步 Canvas 宽度到 content frame
+        # SmoothScrollFrame 的 50ms 延迟会导致 winfo_width() 返回 1
+        p = self.master
+        while p is not None:
+            if hasattr(p, '_apply_canvas_width') and hasattr(p, '_canvas'):
+                p._apply_canvas_width(p._canvas.winfo_width())
+                break
+            p = p.master if hasattr(p, 'master') else None
+        self.update_idletasks()
+
         w = self.winfo_width()
         if w < 100:
-            w = 800  # 兜底（极少触发）
+            self._retry_render(attempt=1)
+            return
 
         cols, gap = _calc_cols_and_gap(w, CARD_W)
-        self._last_cols = cols
-        self._last_gap  = gap
+        self._last_cols     = cols
+        self._last_gap      = gap
+        self._last_resize_w = w   # 记录本次渲染宽度，防止渲染后立即触发 _check_reflow
 
         if not self._pending_dirs:
             t = tc()
             ctk.CTkLabel(self._canvas_frame,
                          text="这里还没有番剧",
                          font=font(13), text_color=t["empty_text"]).pack(pady=40)
+            self._rendering = False
             return
 
+        self._prefetch_and_render(cols, gap)
+
+    def _retry_render(self, attempt: int):
+        """宽度还没到位：16ms 后重试，最多 5 次"""
+        if attempt > 5:
+            w = max(self._last_resize_w, 800)
+            cols, gap = _calc_cols_and_gap(w, CARD_W)
+            self._last_cols = cols
+            self._last_gap  = gap
+            self._last_resize_w = w
+            if self._pending_dirs:
+                self._prefetch_and_render(cols, gap)
+            else:
+                self._rendering = False
+            return
+        self._render_idle_id = self.after(16,
+            lambda: self._do_render())
+
+    def _prefetch_and_render(self, cols: int, gap: int):
+        """批量预取视频数并分批渲染"""
         # ── 批量预取视频数（一次遍历，避免 per-card scandir）──
         self._video_counts: dict[str, int] = {}
         for d in self._pending_dirs:
@@ -366,12 +490,15 @@ class AnimeGrid(ctk.CTkFrame):
             else:
                 display = meta.name or d
 
+            # 只有第一批（可见卡）加载缩略图，后续批次只放占位图
+            defer_thumb = (start + i) >= BATCH_SIZE
             card = AnimeCard(
                 row_frame, fp, display,
                 self._dm, self._image_refs,
                 self._on_enter, self._on_right_click,
                 is_hidden=is_hidden,
                 video_count=self._video_counts.get(fp, 0),
+                defer_thumb=defer_thumb,
             )
             # 左右间距（第一张不加左间距）
             pad_left  = gap if col_idx > 0 else 0
@@ -383,6 +510,9 @@ class AnimeGrid(ctk.CTkFrame):
             aid = self.after(BATCH_DELAY,
                              lambda: self._render_batch(dirs, cols, gap, end))
             self._after_ids.append(aid)
+        else:
+            # 所有批次完成，延迟一帧后解除屏蔽
+            self.after(0, lambda: setattr(self, "_rendering", False))
 
     # 行容器缓存（用列表按 row_idx 索引）
     def _get_or_create_row(self, row_idx: int, gap: int) -> ctk.CTkFrame:
@@ -398,6 +528,9 @@ class AnimeGrid(ctk.CTkFrame):
         return row
 
     def destroy(self):
+        if self._render_idle_id:
+            try: self.after_cancel(self._render_idle_id)
+            except Exception: pass
         for aid in self._after_ids:
             try: self.after_cancel(aid)
             except Exception: pass

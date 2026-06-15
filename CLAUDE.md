@@ -7,12 +7,13 @@
 ```
 anime_tracker/
 ├── main.py                 # 入口：App 类、导航路由、主页、设置回调
-├── config.py               # 常量、主题颜色系统（DARK/LIGHT/ACCENT→tc()）
+├── config.py               # 常量、主题颜色系统（THEME_PRESETS→tc()）
 ├── data.py                 # JSON 数据读写、文件扫描工具（独立模块）
-├── utils.py                # 字体、封面图、视频时长、PopupMenu、Toast
+├── utils.py                # 字体、封面图、视频缩略图(ffmpeg)、时长(ffprobe)、PopupMenu、Toast
 ├── dialogs.py              # 编辑元数据、Bangumi 搜索、设置弹窗
 ├── bangumi.py              # Bangumi API 搜索/抓取（bgm.tv）
 ├── kiroq.ico / 1.png      # 应用图标
+├── bin/                    # ffmpeg + ffprobe（build.bat 自动下载，不提交 git）
 ├── core/
 │   ├── data_manager.py     # DataManager 类：数据读写、防抖保存、迁移
 │   ├── models.py           # FolderMeta 数据类
@@ -41,14 +42,21 @@ anime_tracker/
 - 目录结构：root → 番剧文件夹 → 视频文件
 - 元数据（封面、评分、简介）存在 `folder_meta` 中
 
+### 视频处理
+- **缩略图**：`get_video_thumb_ctk()` → 内存 LRU → 磁盘 `~/.anime_tracker_thumbs/{md5}.jpg` → ffmpeg 截帧（异步，并发 3）
+- **时长**：`get_video_duration()` → ffprobe JSON → 缓存到 `video_durations`
+- **时长统计**：主页 `_calc_watch_time()` 遍历已看列表累加，后台 `_scan_durations_bg()` 补充扫描
+- ffmpeg/ffprobe 路径：`_find_ffmpeg()` / `_find_ffprobe()` 探测 `bin/`、系统 PATH
+
 ### 关键模式
 - `np()` = `os.path.normpath`，所有路径统一格式
 - `scan_folder()` 一次 `os.scandir` 同时返回子目录+视频文件
 - 列表全量重建（nav、grid、detail），数据持久化，不怕丢状态
+- VideoList 行复用：首次创建缓存，后续 `refresh()` 只 `configure()` 更新颜色
 
 ## 打包
 
 ```bash
-build.bat          # Windows 一键打包 → dist/KiroQ.exe
+build.bat          # Windows 一键打包 → dist/KiroQ.exe（含 ffmpeg，约 220MB）
 python main.py     # 源码运行
 ```

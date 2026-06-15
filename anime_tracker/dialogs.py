@@ -13,15 +13,20 @@ import bangumi as bgm
 log = logging.getLogger(__name__)
 
 def _set_icon(window):
-    """给弹窗设置图标"""
+    """给弹窗设置图标（延迟执行，确保 CTkToplevel 完全初始化后再设置）"""
     import sys, os
     if getattr(sys, 'frozen', False):
         ico = os.path.join(sys._MEIPASS, "anime_tracker", "kiroq.ico")
     else:
         ico = os.path.join(os.path.dirname(os.path.abspath(__file__)), "kiroq.ico")
     if os.path.exists(ico):
-        window.update_idletasks()
-        window.iconbitmap(ico)
+        def _apply():
+            try:
+                if window.winfo_exists():
+                    window.iconbitmap(ico)
+            except Exception:
+                pass
+        window.after(50, _apply)
 
 
 # ── 编辑信息弹窗 ──────────────────────────────────────

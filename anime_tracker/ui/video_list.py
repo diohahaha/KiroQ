@@ -1,13 +1,22 @@
-"""视频列表渲染（支持多选）— 行复用版
+"""视频列表渲染（右键菜单 + 时长显示）— 行复用版
 
-refresh() 不复建 Widget，只更新文字/颜色/checkbox 状态。
+refresh() 不复建 Widget，只更新文字/颜色/已看徽标状态。
+多选功能已移除，统一改为右键菜单操作。
 """
 import os
 from functools import partial
 import customtkinter as ctk
-from utils import font, Tooltip, show_toast
+from utils import font, Tooltip
 from config import tc
 from core.data_manager import np, natural_key
+
+
+def _fmt_dur(sec: float) -> str:
+    """秒 → MM:SS 或 H:MM:SS"""
+    sec = int(sec)
+    h, r = divmod(sec, 3600)
+    m, s = divmod(r, 60)
+    return f"{h}:{m:02d}:{s:02d}" if h else f"{m:02d}:{s:02d}"
 
 
 class VideoList:
@@ -20,14 +29,12 @@ class VideoList:
         self._on_open     = on_open
         self._app_win     = app_win
         self._sort_var    = ctk.StringVar(value="文件名升序")
-        self._selected: set[str] = set()
-        self._check_vars: dict[str, ctk.BooleanVar] = {}
-        # 行缓存：fp → {row, cb, var, lbl, lbl_w}
+        # 行缓存：fp → {row, lbl, lbl_w, bg}
         self._row_cache: dict[str, dict] = {}
         self._first_render = True
 
+    # ── 排序栏（仅保留排序，无多选按钮）────────────────
     def render_controls(self, parent):
-        t = tc()
         ctrl = ctk.CTkFrame(parent, fg_color="transparent")
         ctrl.pack(fill="x", anchor="w", pady=(0, 4))
 
@@ -36,24 +43,9 @@ class VideoList:
                           values=["文件名升序", "文件名降序"],
                           width=130, height=28, font=font(12),
                           command=lambda _: self.refresh()).pack(side="left", padx=4)
-
-        ctk.CTkButton(ctrl, text="☐ 全选", width=70, height=26,
-                      fg_color="transparent", hover_color=t["hover"],
-                      font=font(11), command=self._select_all).pack(side="left", padx=(12, 4))
-        ctk.CTkButton(ctrl, text="✗ 取消", width=70, height=26,
-                      fg_color="transparent", hover_color=t["hover"],
-                      font=font(11), command=self._deselect_all).pack(side="left")
-
-        ctk.CTkButton(ctrl, text="✓ 已看", width=70, height=26,
-                      fg_color="transparent", hover_color="#1a3a1a",
-                      font=font(11), command=self._batch_mark).pack(side="right", padx=(0, 2))
-        ctk.CTkButton(ctrl, text="✗ 未看", width=70, height=26,
-                      fg_color="transparent", hover_color="#3a1a1a",
-                      font=font(11), command=self._batch_unmark).pack(side="right", padx=2)
-
         return self._sort_var
 
-    # ── 刷新（核心：复用行容器）─────────────────────────
+    # ── 刷新（复用行容器）────────────────────────────────
     def refresh(self):
         t = tc()
         watched_set = set(self._dm.data["watched"].get(self._folder_path, []))
@@ -66,7 +58,6 @@ class VideoList:
             for w in self._container.winfo_children():
                 w.destroy()
             self._row_cache.clear()
-            self._check_vars.clear()
             for i, (fname, fp) in enumerate(zip(videos, fps_ordered)):
                 is_w = fp in watched_set
                 bg = t["row_even"] if i % 2 == 0 else t["row_odd"]
@@ -74,7 +65,7 @@ class VideoList:
             self._first_render = False
             return
 
-        # 后续刷新：只更新已有行
+        # 后续刷新：只更新已有行状态
         for i, (fname, fp) in enumerate(zip(videos, fps_ordered)):
             is_w = fp in watched_set
             bg = t["row_even"] if i % 2 == 0 else t["row_odd"]
@@ -84,24 +75,18 @@ class VideoList:
                 self._mk_row(fname, fp, i, is_w, bg, t)
                 continue
 
-            # 只改状态，不重建
             c["row"].configure(fg_color=bg)
             c["bg"] = bg
-            c["var"].set(fp in self._selected)
-            c["cb"].configure(
-                fg_color=t["cb_checked"] if not is_w else t["cb_unchecked"],
-                hover_color=t["cb_hover"])
             c["lbl"].configure(
                 text_color=t["unwatched_text"] if is_w else t["text_main"])
 
             if is_w:
                 if not c["lbl_w"].winfo_ismapped():
-                    c["lbl_w"].pack(side="right", padx=(0, 10))
+                    c["lbl_w"].pack(side="right", padx=(0, 6))
             else:
                 if c["lbl_w"].winfo_ismapped():
                     c["lbl_w"].pack_forget()
 
-            # pack 顺序确保排序生效
             c["row"].pack(fill="x", pady=2)
 
     def _mk_row(self, fname: str, fp: str, idx: int,
@@ -111,85 +96,49 @@ class VideoList:
         row.pack(fill="x", pady=2)
         row.pack_propagate(False)
 
-        var = ctk.BooleanVar(value=fp in self._selected)
-        self._check_vars[fp] = var
-        cb = ctk.CTkCheckBox(row, text="", variable=var,
-                             width=22, height=22, checkbox_width=16, checkbox_height=16,
-                             border_width=1, corner_radius=3,
-                             fg_color=t["cb_checked"] if not is_w else t["cb_unchecked"],
-                             hover_color=t["cb_hover"],
-                             command=partial(self._toggle_select, fp))
-        cb.pack(side="left", padx=(8, 4))
+        # ── 时长（最右侧，先 pack 占位）──
+        dur = self._dm.get_duration(fp)
+        if dur and dur > 0:
+            ctk.CTkLabel(row, text=_fmt_dur(dur),
+                         font=font(10), text_color=t["text_dim"],
+                         width=55, anchor="e"
+                         ).pack(side="right", padx=(0, 8))
 
+        # ── 已看标记（时长左边）──
+        lbl_w = ctk.CTkLabel(row, text="✓ 看",
+                             font=font(10), text_color=t["watched_text"],
+                             width=38)
+        if is_w:
+            lbl_w.pack(side="right", padx=(0, 4))
+
+        # ── 文件名（填满剩余宽度）──
         lbl = ctk.CTkLabel(row, text=fname, font=font(12),
                            text_color=t["unwatched_text"] if is_w else t["text_main"],
                            anchor="w")
-        lbl.pack(side="left", fill="x", expand=True, padx=(2, 0))
+        lbl.pack(side="left", fill="x", expand=True, padx=(10, 0))
         Tooltip(lbl, fname)
 
-        lbl_w = ctk.CTkLabel(row, text="已看", font=font(10),
-                             text_color=t["watched_text"], width=36)
-        if is_w:
-            lbl_w.pack(side="right", padx=(0, 10))
-
-        open_fn = partial(self._open, fp)
+        # ── 事件绑定 ──
+        open_fn   = partial(self._open, fp)
         rclick_fn = partial(self._rclick, fp, fname)
         for w in (row, lbl):
             w.bind("<Double-Button-1>", lambda e, f=open_fn: f())
             w.bind("<Button-3>", rclick_fn)
-            w.bind("<Enter>",  lambda e, r=row: r.configure(fg_color=t["row_hover"]))
-            w.bind("<Leave>",  lambda e, r=row: r.configure(fg_color=self._row_cache.get(fp, {}).get("bg", bg)))
+            w.bind("<Enter>",
+                   lambda e, r=row: r.configure(fg_color=t["row_hover"]))
+            w.bind("<Leave>",
+                   lambda e, r=row: r.configure(
+                       fg_color=self._row_cache.get(fp, {}).get("bg", bg)))
 
-        self._row_cache[fp] = {"row": row, "cb": cb, "var": var,
-                               "lbl": lbl, "lbl_w": lbl_w, "bg": bg}
+        self._row_cache[fp] = {"row": row, "lbl": lbl, "lbl_w": lbl_w, "bg": bg}
 
-    # ── 选择 ────────────────────────────────────────────
-    def _toggle_select(self, fp: str):
-        if fp in self._selected:
-            self._selected.discard(fp)
-        else:
-            self._selected.add(fp)
-
-    def _select_all(self):
-        for fp, var in self._check_vars.items():
-            var.set(True)
-            self._selected.add(fp)
-
-    def _deselect_all(self):
-        for fp, var in self._check_vars.items():
-            var.set(False)
-        self._selected.clear()
-
-    # ── 批量操作 ────────────────────────────────────────
-    def _batch_mark(self):
-        targets = list(self._selected) if self._selected else \
-                  [np(os.path.join(self._folder_path, v)) for v in self._videos]
-        for fp in targets:
-            self._dm.mark_watched(fp, self._folder_path)
-        if self._app_win:
-            show_toast(self._app_win, f"✓ 已标记 {len(targets)} 个为已看")
-        self.refresh()
-
-    def _batch_unmark(self):
-        watched = self._dm.data["watched"].get(self._folder_path, [])
-        targets = list(self._selected) if self._selected else list(watched)
-        for fp in targets:
-            if fp in watched:
-                watched.remove(fp)
-        self._dm.save()
-        if self._app_win:
-            show_toast(self._app_win, f"✓ 已标记 {len(targets)} 个为未看")
-        self.refresh()
-
-    # ── 打开 / 右键 ────────────────────────────────────
+    # ── 打开 / 右键 ─────────────────────────────────────
     def _open(self, full_path: str):
         self._on_open(full_path)
         self.refresh()
 
     def _rclick(self, full_path: str, fname: str, event):
         from ui.menus import VideoContextMenu
-        selected = list(self._selected) \
-            if self._selected and full_path in self._selected else [full_path]
         VideoContextMenu(self._app_win or self._container.winfo_toplevel(),
-                         event, selected, self._folder_path,
+                         event, [full_path], self._folder_path,
                          self._dm, self.refresh, self._app_win)

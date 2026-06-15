@@ -62,16 +62,42 @@ def _load_pil(folder_path: str, custom: str, w: int, h: int) -> Image.Image:
                 pass
     return _placeholder_pil(w, h)
 
-def get_cover_ctk(folder_path: str, custom: str, w: int, h: int) -> ctk.CTkImage:
+def get_cover_ctk(folder_path: str, custom: str, w: int, h: int,
+                   on_ready=None, root_widget=None) -> ctk.CTkImage:
+    """获取封面 CTkImage。
+    若缓存命中直接返回；否则先返回占位图，后台线程加载后通过 on_ready 回调刷新。
+    """
     key = _cache_key(folder_path, custom, w, h)
-    if key not in _cover_cache:
+    if key in _cover_cache:
+        pil = _cover_cache[key]
+        return ctk.CTkImage(light_image=pil, dark_image=pil, size=(w, h))
+
+    # 缓存未命中：同步返回占位图，异步加载真实封面
+    placeholder = _placeholder_pil(w, h)
+    if on_ready and root_widget:
+        def _bg():
+            if len(_cover_cache) > 300:
+                for k in list(_cover_cache.keys())[:150]:
+                    del _cover_cache[k]
+            pil2 = _load_pil(folder_path, custom, w, h)
+            _cover_cache[key] = pil2
+            ctk_img = ctk.CTkImage(light_image=pil2, dark_image=pil2, size=(w, h))
+            try:
+                root_widget.after(0, lambda: on_ready(ctk_img))
+            except Exception:
+                pass
+        import threading
+        threading.Thread(target=_bg, daemon=True).start()
+    else:
+        # 无回调时同步加载（兼容旧调用）
         if len(_cover_cache) > 300:
-            # 简单 LRU：超过 300 条清一半
             for k in list(_cover_cache.keys())[:150]:
                 del _cover_cache[k]
         _cover_cache[key] = _load_pil(folder_path, custom, w, h)
-    pil = _cover_cache[key]
-    return ctk.CTkImage(light_image=pil, dark_image=pil, size=(w, h))
+        pil = _cover_cache[key]
+        return ctk.CTkImage(light_image=pil, dark_image=pil, size=(w, h))
+
+    return ctk.CTkImage(light_image=placeholder, dark_image=placeholder, size=(w, h))
 
 def invalidate_cover(folder_path: str):
     """只清除该文件夹相关的缓存条目"""
@@ -100,24 +126,42 @@ def open_folder_explorer(path: str):
 
 
 # ── 视频时长提取 ──────────────────────────────────────
+def _find_ffprobe() -> str | None:
+    """探测 ffprobe，结果缓存"""
+    if hasattr(_find_ffprobe, "_cached"):
+        return _find_ffprobe._cached or None
+    _find_ffprobe._cached = ""
+    import subprocess
+    for p in _FFPROBE_PATHS:
+        try:
+            r = subprocess.run([p, "-version"], capture_output=True, timeout=5)
+            if r.returncode == 0:
+                _find_ffprobe._cached = p
+                log.info(f"ffprobe found: {p}")
+                return p
+        except Exception:
+            continue
+    log.info("ffprobe not found — using 24min estimate")
+    return None
+
+
 def get_video_duration(filepath: str) -> float | None:
-    """用 ffprobe 获取视频时长（秒），不可用则返回 None"""
-    import subprocess, json, os, logging
+    """用内置 ffprobe 获取视频时长（秒），返回 None 则用 24min 估算"""
+    import logging, subprocess, json
     log = logging.getLogger(__name__)
+    exe = _find_ffprobe()
+    if not exe:
+        return None
     try:
-        cmd = ["ffprobe", "-v", "quiet", "-print_format", "json",
-               "-show_format", filepath]
-        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
-        if proc.returncode != 0:
-            return None
+        proc = subprocess.run(
+            [exe, "-v", "quiet", "-print_format", "json", "-show_format", filepath],
+            capture_output=True, timeout=15,
+            encoding="utf-8", errors="replace")
         data = json.loads(proc.stdout)
         return float(data["format"]["duration"])
-    except FileNotFoundError:
-        log.info("ffprobe not found — using 24min estimate")
-        return None
     except Exception as e:
         log.debug(f"duration probe failed: {e}")
-        return None
+    return None
 
 # ── Tooltip（跟随鼠标）────────────────────────────────
 class Tooltip:
@@ -303,8 +347,11 @@ def confirm_dialog(parent, title: str, message: str) -> bool:
     else:
         _ico = os.path.join(os.path.dirname(os.path.abspath(__file__)), "kiroq.ico")
     if os.path.exists(_ico):
-        dlg.update_idletasks()
-        dlg.iconbitmap(_ico)
+        def _apply_ico(w=dlg, p=_ico):
+            try:
+                if w.winfo_exists(): w.iconbitmap(p)
+            except Exception: pass
+        dlg.after(50, _apply_ico)
     ctk.CTkLabel(dlg, text=message, font=font(13), wraplength=300).pack(pady=(24,16))
     row = ctk.CTkFrame(dlg, fg_color="transparent"); row.pack()
     def ok(): result[0]=True; dlg.destroy()
@@ -474,12 +521,22 @@ _THUMB_DIR   = os.path.join(os.path.expanduser("~"), ".anime_tracker_thumbs")
 _thumb_mem: "collections.OrderedDict[tuple, Image.Image]" = collections.OrderedDict()
 _THUMB_MEM_MAX = 400
 _thumb_sem   = threading.Semaphore(3)   # 最多同时 3 个 ffmpeg 进程
+_BIN_DIR = os.path.join(os.path.dirname(__file__), "bin")
 _FFMPEG_PATHS = [
-    "ffmpeg",                                           # 系统 PATH
-    os.path.join(os.path.dirname(__file__), "ffmpeg.exe"),  # 同目录
-    os.path.join(os.path.dirname(__file__), "ffmpeg", "ffmpeg.exe"),
+    os.path.join(_BIN_DIR, "ffmpeg.exe"),
+    "ffmpeg",
     r"C:\ffmpeg\bin\ffmpeg.exe",
 ]
+_FFPROBE_PATHS = [
+    os.path.join(_BIN_DIR, "ffprobe.exe"),
+    "ffprobe",
+    r"C:\ffmpeg\bin\ffprobe.exe",
+]
+import sys as _sys
+if getattr(_sys, 'frozen', False):
+    _MEI_BIN = os.path.join(_sys._MEIPASS, "anime_tracker", "bin")
+    _FFMPEG_PATHS.insert(0, os.path.join(_MEI_BIN, "ffmpeg.exe"))
+    _FFPROBE_PATHS.insert(0, os.path.join(_MEI_BIN, "ffprobe.exe"))
 _ffmpeg_exe: str | None = None   # 缓存探测结果（None=未探测，""=不可用）
 _ffmpeg_checked = False
 

@@ -69,9 +69,21 @@ class DetailPage:
         inner = ctk.CTkFrame(top, fg_color="transparent")
         inner.pack(fill="x", padx=20, pady=16)
 
-        img = get_cover_ctk(folder_path, meta.cover or "", 130, 185)
+        lbl_cover = ctk.CTkLabel(inner, text="", width=130, height=185)
+        lbl_cover.pack(side="left", padx=(0,20))
+
+        def _on_cover_ready(img, lbl=lbl_cover):
+            try:
+                if lbl.winfo_exists():
+                    lbl.configure(image=img)
+                    self._refs.append(img)
+            except Exception:
+                pass
+
+        img = get_cover_ctk(folder_path, meta.cover or "", 130, 185,
+                            on_ready=_on_cover_ready, root_widget=lbl_cover)
         self._refs.append(img)
-        ctk.CTkLabel(inner, image=img, text="").pack(side="left", padx=(0,20))
+        lbl_cover.configure(image=img)
 
         info = ctk.CTkFrame(inner, fg_color="transparent")
         info.pack(side="left", fill="both", expand=True)
@@ -92,18 +104,6 @@ class DetailPage:
                           command=partial(webbrowser.open, meta.link)
                           ).pack(side="right", padx=(4,0))
 
-        # 视图切换（仅当有视频时显示）
-        self._btn_view = None
-        if self._videos:
-            view_mode = meta.video_view_mode or "list"
-            self._btn_view = ctk.CTkButton(name_row,
-                text="🔲" if view_mode == "list" else "📋",
-                width=36, height=28,
-                fg_color=t["btn_toggle_a"] if view_mode == "list" else t["btn_toggle_b"],
-                hover_color=t["hover"], font=font(14),
-                command=self._toggle_view)
-            self._btn_view.pack(side="right", padx=(4,0))
-
         # 「···」菜单
         btn_more = ctk.CTkButton(name_row, text="···", width=36, height=28,
                                   fg_color="transparent", hover_color=t["hover"],
@@ -117,6 +117,9 @@ class DetailPage:
                                       partial(self._on_edit, folder_path)
                                   ))
         btn_more.pack(side="right", padx=(4,0))
+
+        # 视图切换按钮在 _render_content() 中创建（放在"📺 视频文件"标题行右侧）
+        self._btn_view = None
 
         # ── 评分 + 备注 ──
         parts = []
@@ -186,10 +189,21 @@ class DetailPage:
         if self._videos:
             view_mode = meta.video_view_mode or "list"
 
-            ctk.CTkLabel(scroll.content, text="📺 视频文件",
+            # 视频区标题行：左侧标题 + 右侧列表/宫格切换按钮
+            vid_hdr = ctk.CTkFrame(scroll.content, fg_color="transparent")
+            vid_hdr.pack(fill="x", pady=(0, 6))
+            ctk.CTkLabel(vid_hdr, text="📺 视频文件",
                          font=font(13, "bold"),
                          text_color=t["text_dim"], anchor="w"
-                         ).pack(anchor="w", pady=(0, 6))
+                         ).pack(side="left")
+            self._btn_view = ctk.CTkButton(
+                vid_hdr,
+                text="🔲" if view_mode == "list" else "📋",
+                width=36, height=26,
+                fg_color=t["btn_toggle_a"] if view_mode == "list" else t["btn_toggle_b"],
+                hover_color=t["hover"], font=font(13),
+                command=self._toggle_view)
+            self._btn_view.pack(side="right")
 
             if view_mode == "list":
                 vl = VideoList(None, self._dm, folder_path,

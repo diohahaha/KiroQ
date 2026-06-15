@@ -73,6 +73,8 @@ class AnimeTrackerApp(ctk.CTk):
         self._show_clean_names = True   # 默认显示清洗后的短名称
         self._fetch_queue: list[str] = []   # 待自动抓取队列
         self._scanning_durations = False   # 时长扫描防重入
+        self._resize_job = None
+        self._last_width = 0
 
         # 把设置里保存的 ffmpeg 路径注入 utils，避免每次重新探测
         saved_ff = s.get("ffmpeg_path", "")
@@ -83,6 +85,7 @@ class AnimeTrackerApp(ctk.CTk):
 
         self._build_ui()
         self._bind_keys()
+        self.bind("<Configure>", self._on_window_resize, add="+")
 
         root = np(self._dm.data.get("root",""))
         if root and os.path.isdir(root):
@@ -105,6 +108,20 @@ class AnimeTrackerApp(ctk.CTk):
         self.bind("<Control-f>", lambda e: self._navbar.search_entry.focus())
         self.bind("<F5>",        lambda e: self._refresh())
         self.bind("<Escape>",    lambda e: self._search_var.set(""))
+
+    def _on_window_resize(self, event):
+        """窗口宽度变化时防抖刷新（仅主窗口事件）"""
+        if event.widget is not self:
+            return
+        new_w = self.winfo_width()
+        if self._last_width == 0:
+            self._last_width = new_w
+            return
+        if abs(new_w - self._last_width) > 50:
+            self._last_width = new_w
+            if self._resize_job:
+                self.after_cancel(self._resize_job)
+            self._resize_job = self.after(200, self._refresh)
 
     def _clear(self):
         for w in self.content.winfo_children(): w.destroy()
@@ -179,6 +196,9 @@ class AnimeTrackerApp(ctk.CTk):
             return True
 
         visible = [d for d in subdirs if should_show(d)]
+        # 记录首次出现时间（用于按添加时间排序）
+        for d in visible:
+            self._dm.record_added(np(os.path.join(root, d)))
         sorted_dirs = self._sorted(root, visible)
 
         # 工具栏
@@ -249,14 +269,41 @@ class AnimeTrackerApp(ctk.CTk):
 
         # 根目录直接放的视频
         if videos:
-            if visible:
-                ctk.CTkLabel(scroll.content, text="根目录视频", font=font(13),
-                             text_color=tc()["text_dim"], anchor="w").pack(anchor="w", pady=(12,4))
-            from ui.video_list import VideoList
-            vf = ctk.CTkFrame(scroll.content, fg_color="transparent"); vf.pack(fill="x")
-            vl = VideoList(vf, self._dm, root, videos,
-                           on_open=partial(self._open_video, folder_path=root))
-            vl.refresh()
+            t_ = tc()
+            # 标题行：左侧「根目录视频」+ 右侧列表/宫格切换按钮
+            vid_hdr = ctk.CTkFrame(scroll.content, fg_color="transparent")
+            vid_hdr.pack(fill="x", anchor="w", pady=((16 if visible else 0), 4))
+            ctk.CTkLabel(vid_hdr, text="根目录视频", font=font(13),
+                         text_color=t_["text_dim"], anchor="w").pack(side="left")
+
+            root_view = self._dm.data.get("root_video_view", "list")
+
+            def _toggle_root_view(_root=root, _search=search):
+                cur = self._dm.data.get("root_video_view", "list")
+                self._dm.data["root_video_view"] = "grid" if cur == "list" else "list"
+                self._dm.save()
+                self._show_root(_root, _search)
+
+            ctk.CTkButton(vid_hdr,
+                text="🔲" if root_view == "list" else "📋",
+                width=36, height=26,
+                fg_color=t_["btn_toggle_a"] if root_view == "list" else t_["btn_toggle_b"],
+                hover_color=t_["hover"], font=font(12),
+                command=_toggle_root_view).pack(side="right")
+
+            vf = ctk.CTkFrame(scroll.content, fg_color="transparent")
+            vf.pack(fill="x")
+
+            if root_view == "list":
+                from ui.video_list import VideoList
+                vl = VideoList(vf, self._dm, root, videos,
+                               on_open=partial(self._open_video, folder_path=root))
+                vl.refresh()
+            else:
+                from ui.video_grid import VideoGrid
+                vg = VideoGrid(vf, self._dm, root, videos, self._image_refs,
+                               on_open=self._open_video, app_win=self)
+                vg.render()
 
     # ── 详情页 ────────────────────────────────────────
     def _show_detail(self, folder_path: str):

@@ -41,8 +41,6 @@ class SmoothScrollFrame(ctk.CTkFrame):
         # 内容尺寸变化 → 更新 scrollregion
         self.content.bind("<Configure>", self._on_content_configure)
         self._canvas.bind("<Configure>", self._on_canvas_configure)
-        # 强制初始化一次 scrollregion，防止首次渲染内容未撑开
-        self.content.bind("<Map>", lambda e: self.after(50, self._force_update_scroll))
 
         # 全局滚轮：在 root 上绑定一次，解绑放在 destroy()
         self._wheel_bound = False
@@ -89,13 +87,18 @@ class SmoothScrollFrame(ctk.CTkFrame):
     def _on_content_configure(self, event):
         self._canvas.configure(scrollregion=self._canvas.bbox("all"))
 
-    def _force_update_scroll(self):
-        """首次内容渲染完成后强制刷新 scrollregion"""
-        if self.winfo_exists():
-            self._canvas.configure(scrollregion=self._canvas.bbox("all"))
-
     def _on_canvas_configure(self, event):
-        self._canvas.itemconfig(self._win_id, width=event.width)
+        # 防抖：Canvas 宽度变化时不立即 resize，等 50ms 稳定后再调整
+        if hasattr(self, '_resize_job_c') and self._resize_job_c:
+            try: self.after_cancel(self._resize_job_c)
+            except Exception: pass
+        w = event.width
+        self._resize_job_c = self.after(50, lambda: self._apply_canvas_width(w))
+
+    def _apply_canvas_width(self, w: int):
+        self._resize_job_c = None
+        if self.winfo_exists():
+            self._canvas.itemconfig(self._win_id, width=w)
 
     def _on_scrollbar(self, *args):
         if len(args) >= 2 and args[0] == "moveto":
