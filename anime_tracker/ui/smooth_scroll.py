@@ -20,18 +20,16 @@ class SmoothScrollFrame(ctk.CTkFrame):
     def __init__(self, parent, **kwargs):
         super().__init__(parent, **kwargs)
 
-        self.grid_rowconfigure(0, weight=1)
-        self.grid_columnconfigure(0, weight=1)
+        # Scrollbar（先 pack 右侧，不占内容区宽度）
+        self._scrollbar = ctk.CTkScrollbar(self, command=self._on_scrollbar)
 
-        # Canvas
+        # Canvas（填满剩余空间）
         self._canvas = Canvas(self, highlightthickness=0, bd=0,
                               bg=self._lookup_bg(kwargs.get("fg_color", "transparent")))
-        self._canvas.grid(row=0, column=0, sticky="nsew")
-
-        # Scrollbar
-        self._scrollbar = ctk.CTkScrollbar(self, command=self._on_scrollbar)
-        self._scrollbar.grid(row=0, column=1, sticky="ns")
         self._canvas.configure(yscrollcommand=self._on_scroll)
+
+        self._scrollbar.pack(side="right", fill="y")
+        self._canvas.pack(side="left", fill="both", expand=True)
 
         # 内部容器
         self.content = ctk.CTkFrame(self._canvas, fg_color="transparent")
