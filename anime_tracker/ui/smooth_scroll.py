@@ -20,16 +20,14 @@ class SmoothScrollFrame(ctk.CTkFrame):
     def __init__(self, parent, **kwargs):
         super().__init__(parent, **kwargs)
 
-        # Scrollbar（先 pack 右侧，不占内容区宽度）
-        self._scrollbar = ctk.CTkScrollbar(self, command=self._on_scrollbar)
-
-        # Canvas（填满剩余空间）
+        # Canvas（填满全部空间）
         self._canvas = Canvas(self, highlightthickness=0, bd=0,
                               bg=self._lookup_bg(kwargs.get("fg_color", "transparent")))
         self._canvas.configure(yscrollcommand=self._on_scroll)
+        self._canvas.pack(fill="both", expand=True)
 
-        self._scrollbar.pack(side="right", fill="y")
-        self._canvas.pack(side="left", fill="both", expand=True)
+        # Scrollbar（浮动在右侧，不占布局宽度）
+        self._scrollbar = ctk.CTkScrollbar(self, command=self._on_scrollbar)
 
         # 内部容器
         self.content = ctk.CTkFrame(self._canvas, fg_color="transparent")
@@ -84,11 +82,24 @@ class SmoothScrollFrame(ctk.CTkFrame):
 
     def _on_content_configure(self, event):
         self._canvas.configure(scrollregion=self._canvas.bbox("all"))
+        self._update_scrollbar()
 
     def _on_canvas_configure(self, event):
         """Canvas 宽度变化时立即同步（0 宽跳过，等下次有效值）"""
         if event.width > 0:
             self._apply_canvas_width(event.width)
+        self._update_scrollbar()
+
+    def _update_scrollbar(self):
+        """内容超出才显示滚动条（浮动右侧，不占空间）"""
+        try:
+            bbox = self._canvas.bbox("all")
+            if bbox and bbox[3] > self._canvas.winfo_height():
+                self._scrollbar.place(relx=1.0, rely=0, relheight=1.0, anchor="ne")
+            else:
+                self._scrollbar.place_forget()
+        except Exception:
+            pass
 
     def _apply_canvas_width(self, w: int):
         if self.winfo_exists() and w > 0:
