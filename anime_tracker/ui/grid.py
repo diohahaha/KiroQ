@@ -489,7 +489,7 @@ class AnimeGrid(ctk.CTkFrame):
             row  = getattr(self._canvas_frame, attr, None)
             if row is None or not row.winfo_exists():
                 continue
-            row.pack_configure(anchor="w", padx=gap)
+            row.pack_configure(fill="x", padx=gap)
             for col_idx, card in enumerate(row.winfo_children()):
                 pad_left = gap if col_idx > 0 else 0
                 try:
@@ -568,7 +568,7 @@ class AnimeGrid(ctk.CTkFrame):
             self._canvas_frame.destroy()
 
         self._canvas_frame = ctk.CTkFrame(self, fg_color="transparent")
-        self._canvas_frame.pack(fill="x", anchor="nw")
+        self._canvas_frame.pack(fill="x", expand=True)
 
         # 强制同步 Canvas 宽度到 content frame
         # SmoothScrollFrame 的 50ms 延迟会导致 winfo_width() 返回 1
@@ -749,7 +749,7 @@ class AnimeGrid(ctk.CTkFrame):
             if row.winfo_exists():
                 return row
         row = ctk.CTkFrame(self._canvas_frame, fg_color="transparent")
-        row.pack(anchor="w", padx=gap, pady=0)
+        row.pack(fill="x", padx=gap, pady=0)
         setattr(self._canvas_frame, attr, row)
         return row
 
