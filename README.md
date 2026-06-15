@@ -1,4 +1,4 @@
-# 🎬 KiroQ v1.0
+# 🎬 KiroQ v1.1
 
 本地动漫观看进度管理工具 — 番剧文件夹浏览、Bangumi 元数据抓取、观看进度追踪。
 
@@ -6,35 +6,31 @@
 
 ### 方式一：下载 EXE（推荐，无需 Python）
 
-从 [Releases](../../releases) 下载 `KiroQ.exe`，双击运行。数据自动保存在 `C:\Users\<用户名>\.kiroq_data.json`。
+从 [Releases](../../releases) 下载 `KiroQ.exe`，双击运行。数据保存在 `C:\Users\<用户名>\.kiroq_data.json`。
 
 > Windows Defender 可能误报，点"更多信息 → 仍要运行"即可。
 
 ### 方式二：源码运行
 
 ```bash
-git clone https://github.com/你的用户名/KiroQ.git
+git clone https://github.com/blame-dev/KiroQ.git
 cd KiroQ
 pip install -r requirements.txt
 python anime_tracker/main.py
 ```
 
-可选安装 ffmpeg 以获得精确视频时长统计和视频缩略图。
+内置 ffmpeg/ffprobe，无需额外安装。
 
 ## 功能
 
 - 📂 自动扫描本地动漫文件夹，宫格/列表双视图
+- 🎬 视频缩略图（ffmpeg 截帧）+ 精确时长统计（ffprobe）
 - 🔍 Bangumi 自动抓取元数据（名称、评分、简介、封面）
 - ✅ 视频观看进度标记、累计观看时间统计
+- ☑ 多选批量操作（视频标记、番剧置顶/隐藏/状态/清记录）
 - 🎨 14 套主题（深色/亮色 × 7 种配色）
 - 📌 置顶、隐藏、状态标签（在看/想看/已完结/搁置）
-- 🖱️ 右键菜单、多选批量操作
-
-## 系统要求
-
-- Windows 10+ / macOS / Linux
-- Python 3.10+（源码运行）
-- ffmpeg（可选，用于视频时长精确统计和缩略图）
+- 💾 窗口大小位置自动记忆
 
 ## 快捷键
 
@@ -43,14 +39,15 @@ python anime_tracker/main.py
 | Backspace | 返回上一级 |
 | Ctrl+F | 聚焦搜索框 |
 | F5 | 刷新 |
-| Escape | 清空搜索 |
+| Escape | 退出选择模式 / 清空搜索 |
 
 ## 数据文件
 
-所有数据存储在本地，不上传任何服务器：
+所有数据存储在本地：
 
 - `C:\Users\<用户名>\.kiroq_data.json` — 观看记录、元数据、设置
 - `C:\Users\<用户名>\.kiroq.log` — 运行日志
+- `C:\Users\<用户名>\.anime_tracker_thumbs\` — 视频缩略图缓存
 
 ---
 
