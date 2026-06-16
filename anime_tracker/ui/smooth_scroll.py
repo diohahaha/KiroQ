@@ -20,14 +20,15 @@ class SmoothScrollFrame(ctk.CTkFrame):
     def __init__(self, parent, **kwargs):
         super().__init__(parent, **kwargs)
 
-        # Canvas（填满全部空间）
+        # Scrollbar（右侧，默认隐藏，内容超出时才显示）
+        self._scrollbar = ctk.CTkScrollbar(self, command=self._on_scrollbar)
+
+        # Canvas（填满剩余空间）
         self._canvas = Canvas(self, highlightthickness=0, bd=0,
                               bg=self._lookup_bg(kwargs.get("fg_color", "transparent")))
         self._canvas.configure(yscrollcommand=self._on_scroll)
-        self._canvas.pack(fill="both", expand=True)
 
-        # Scrollbar（浮动在右侧，不占布局宽度）
-        self._scrollbar = ctk.CTkScrollbar(self, command=self._on_scrollbar)
+        self._canvas.pack(side="left", fill="both", expand=True)
 
         # 内部容器
         self.content = ctk.CTkFrame(self._canvas, fg_color="transparent")
@@ -91,13 +92,15 @@ class SmoothScrollFrame(ctk.CTkFrame):
         self._update_scrollbar()
 
     def _update_scrollbar(self):
-        """内容超出才显示滚动条（浮动右侧，不占空间）"""
+        """内容超出才显示滚动条，否则完全隐藏（不占空间）"""
         try:
             bbox = self._canvas.bbox("all")
             if bbox and bbox[3] > self._canvas.winfo_height():
-                self._scrollbar.place(relx=1.0, rely=0, relheight=1.0, anchor="ne")
+                if not self._scrollbar.winfo_ismapped():
+                    self._scrollbar.pack(side="right", fill="y")
             else:
-                self._scrollbar.place_forget()
+                if self._scrollbar.winfo_ismapped():
+                    self._scrollbar.pack_forget()
         except Exception:
             pass
 

@@ -415,6 +415,9 @@ class AnimeTrackerApp(ctk.CTk):
                                on_open=self._open_video, app_win=self)
                 vg.render()
 
+            # 后台扫描根目录视频时长
+            self._scan_root_videos_dur(root, videos)
+
     # ── 详情页 ────────────────────────────────────────
     def _show_detail(self, folder_path: str):
         page = self._current_page or self.content
@@ -704,6 +707,25 @@ class AnimeTrackerApp(ctk.CTk):
             return f"{h} 小时 {m} 分钟" if m else f"{h} 小时"
         else:
             return f"{m} 分钟"
+
+    def _scan_root_videos_dur(self, folder: str, videos: list[str]):
+        """后台扫描根目录视频时长（非阻塞）"""
+        import threading
+        to_scan = []
+        for v in videos:
+            fp = np(os.path.join(folder, v))
+            if self._dm.get_duration(fp) is None:
+                to_scan.append(fp)
+        if not to_scan:
+            return
+        def run():
+            for fp in to_scan:
+                dur = get_video_duration(fp)
+                self._dm.set_duration(fp, dur if dur is not None else -1)
+            if any(self._dm.get_duration(fp) and self._dm.get_duration(fp) > 0
+                   for fp in to_scan):
+                self.after(0, self._refresh)
+        threading.Thread(target=run, daemon=True).start()
 
     def _scan_durations_bg(self, root_folder: str):
         """后台线程：扫描已看但未缓存的视频时长（防重入）"""
