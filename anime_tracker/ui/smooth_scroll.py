@@ -2,10 +2,15 @@
 
 全局滚轮策略：在 root 上绑定一次，用坐标判断是否在本区域内，
 不再 bind/unbind（消除快速移动鼠标时的频繁绑定操作）。
+
+滚动条策略：叠加在 Canvas 右侧边缘（place），不参与 pack 布局。
+内容超出时显示并自动缩小内容区宽度避让；内容够长时完全隐藏。
 """
 import customtkinter as ctk
 from tkinter import Canvas
 from config import tc
+
+SB_W = 8  # 滚动条宽度（叠加不占布局）
 
 
 class SmoothScrollFrame(ctk.CTkFrame):
@@ -20,15 +25,14 @@ class SmoothScrollFrame(ctk.CTkFrame):
     def __init__(self, parent, **kwargs):
         super().__init__(parent, **kwargs)
 
-        # Scrollbar（右侧，默认隐藏，内容超出时才显示）
-        self._scrollbar = ctk.CTkScrollbar(self, command=self._on_scrollbar)
-
-        # Canvas（填满剩余空间）
+        # Canvas（填满全部空间）
         self._canvas = Canvas(self, highlightthickness=0, bd=0,
                               bg=self._lookup_bg(kwargs.get("fg_color", "transparent")))
         self._canvas.configure(yscrollcommand=self._on_scroll)
+        self._canvas.pack(fill="both", expand=True)
 
-        self._canvas.pack(side="left", fill="both", expand=True)
+        # Scrollbar（叠加在右侧，不参与布局）
+        self._scrollbar = ctk.CTkScrollbar(self, command=self._on_scrollbar, width=SB_W)
 
         # 内部容器
         self.content = ctk.CTkFrame(self._canvas, fg_color="transparent")
@@ -86,27 +90,33 @@ class SmoothScrollFrame(ctk.CTkFrame):
         self._update_scrollbar()
 
     def _on_canvas_configure(self, event):
-        """Canvas 宽度变化时立即同步（0 宽跳过，等下次有效值）"""
+        """Canvas 宽度变化时同步内容宽度"""
         if event.width > 0:
-            self._apply_canvas_width(event.width)
+            self._apply_width(event.width)
         self._update_scrollbar()
 
+    def _apply_width(self, canvas_w: int):
+        """设置内容区宽度（滚动条可见时预留 SB_W 避让）"""
+        if not self.winfo_exists() or canvas_w <= 0:
+            return
+        w = canvas_w - SB_W if self._scrollbar.winfo_ismapped() else canvas_w
+        self._canvas.itemconfig(self._win_id, width=w)
+
     def _update_scrollbar(self):
-        """内容超出才显示滚动条，否则完全隐藏（不占空间）"""
+        """内容超出 → 显示滚动条并缩小内容区；内容够长 → 完全隐藏"""
         try:
             bbox = self._canvas.bbox("all")
-            if bbox and bbox[3] > self._canvas.winfo_height():
+            overflow = bbox and bbox[3] > self._canvas.winfo_height()
+            if overflow:
                 if not self._scrollbar.winfo_ismapped():
-                    self._scrollbar.pack(side="right", fill="y")
+                    self._scrollbar.place(relx=1.0, rely=0, relheight=1.0, anchor="ne")
+                    self._apply_width(self._canvas.winfo_width())
             else:
                 if self._scrollbar.winfo_ismapped():
-                    self._scrollbar.pack_forget()
+                    self._scrollbar.place_forget()
+                    self._apply_width(self._canvas.winfo_width())
         except Exception:
             pass
-
-    def _apply_canvas_width(self, w: int):
-        if self.winfo_exists() and w > 0:
-            self._canvas.itemconfig(self._win_id, width=w)
 
     def _on_scrollbar(self, *args):
         if len(args) >= 2 and args[0] == "moveto":
