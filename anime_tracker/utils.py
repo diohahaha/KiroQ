@@ -1,10 +1,13 @@
 """工具函数：图片、字体、Tooltip、Toast、确认框"""
-import os, datetime, logging, functools, subprocess, threading, ctypes
+import os, datetime, logging, functools, subprocess, threading, ctypes, sys as _sys_mod
 from typing import Optional
 from ctypes import wintypes
 from PIL import Image, ImageDraw
 import customtkinter as ctk
 from config import IMAGE_EXTS, FONT_FAMILY, tc
+
+# Windows 下隐藏 subprocess 弹出的命令行窗口
+_SUBPROCESS_KW = {"creationflags": subprocess.CREATE_NO_WINDOW} if _sys_mod.platform == "win32" else {}
 
 log = logging.getLogger(__name__)
 
@@ -139,7 +142,8 @@ def _find_ffprobe() -> str | None:
         import subprocess
         for p in _FFPROBE_PATHS:
             try:
-                r = subprocess.run([p, "-version"], capture_output=True, timeout=5)
+                r = subprocess.run([p, "-version"], capture_output=True, timeout=5,
+                                   **_SUBPROCESS_KW)
                 if r.returncode == 0:
                     _find_ffprobe._cached = p
                     log.info(f"ffprobe found: {p}")
@@ -162,7 +166,7 @@ def get_video_duration(filepath: str) -> float | None:
         proc = subprocess.run(
             [exe, "-v", "quiet", "-print_format", "json", "-show_format", filepath],
             capture_output=True, timeout=15,
-            encoding="utf-8", errors="replace")
+            encoding="utf-8", errors="replace", **_SUBPROCESS_KW)
         data = json.loads(proc.stdout)
         return float(data["format"]["duration"])
     except Exception as e:
@@ -578,7 +582,8 @@ def _find_ffmpeg() -> str | None:
     import subprocess
     for p in _FFMPEG_PATHS:
         try:
-            r = subprocess.run([p, "-version"], capture_output=True, timeout=5)
+            r = subprocess.run([p, "-version"], capture_output=True, timeout=5,
+                               **_SUBPROCESS_KW)
             if r.returncode == 0:
                 _ffmpeg_exe = p
                 log.info(f"ffmpeg found: {p}")
@@ -622,7 +627,7 @@ def _extract_thumb_ffmpeg(video_path: str, w: int, h: int) -> Image.Image | None
             "-q:v", "3",
             tmp,
         ]
-        r = subprocess.run(cmd, capture_output=True, timeout=20)
+        r = subprocess.run(cmd, capture_output=True, timeout=20, **_SUBPROCESS_KW)
         if r.returncode == 0 and os.path.getsize(tmp) > 0:
             img = Image.open(tmp).convert("RGB").resize((w, h), Image.LANCZOS)
             # 写磁盘缓存

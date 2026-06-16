@@ -21,6 +21,8 @@ python -m PyInstaller --onefile --windowed ^
   --icon=anime_tracker/kiroq.ico ^
   --name KiroQ ^
   --add-data "anime_tracker;anime_tracker" ^
+  --add-binary "anime_tracker/bin/ffmpeg.exe;anime_tracker/bin" ^
+  --add-binary "anime_tracker/bin/ffprobe.exe;anime_tracker/bin" ^
   --add-data "%PIL_PATH%;PIL" ^
   --collect-all customtkinter ^
   --collect-all requests ^
