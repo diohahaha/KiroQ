@@ -26,16 +26,20 @@ class NavBar(ctk.CTkFrame):
 
         ctk.CTkButton(right, text="⚙", width=36, height=32,
                       fg_color="transparent", hover_color=t["link_hover"],
-                      font=font(16), command=on_settings).pack(side="left", padx=(0,4))
+                      text_color=t["text_main"], font=font(16),
+                      command=on_settings).pack(side="left", padx=(0,4))
         ctk.CTkButton(right, text="📁 根目录", width=100, height=32,
-                      font=font(12), command=on_pick_root).pack(side="left")
+                      fg_color=t["btn_toggle_a"], hover_color=t["link_hover"],
+                      text_color=t["text_main"], font=font(12),
+                      command=on_pick_root).pack(side="left")
 
     def rebuild(self, nav_stack: list):
         t = tc()
         for w in self._crumb_frame.winfo_children(): w.destroy()
         ctk.CTkButton(self._crumb_frame, text="⌂ 首页", width=72, height=32,
                       fg_color="transparent", hover_color=t["link_hover"],
-                      font=font(12), command=self._on_home).pack(side="left", pady=10)
+                      text_color=t["text_main"], font=font(12),
+                      command=self._on_home).pack(side="left", pady=10)
         for i, (path, name) in enumerate(nav_stack[1:], start=1):
             ctk.CTkLabel(self._crumb_frame, text=" › ", font=font(14),
                          text_color=t["crumb_sep"]).pack(side="left")

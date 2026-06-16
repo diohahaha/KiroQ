@@ -401,6 +401,7 @@ class AnimeTrackerApp(ctk.CTk):
                 width=36, height=26,
                 fg_color=t_["btn_toggle_a"] if root_view == "list" else t_["btn_toggle_b"],
                 hover_color=t_["hover"], font=font(12),
+                text_color=t_["text_main"],
                 command=_toggle_root_view).pack(side="right")
 
             vf = ctk.CTkFrame(scroll.content, fg_color="transparent")

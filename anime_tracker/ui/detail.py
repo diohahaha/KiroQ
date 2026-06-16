@@ -374,6 +374,7 @@ class DetailPage:
                 width=36, height=26,
                 fg_color=t["btn_toggle_a"] if view_mode == "list" else t["btn_toggle_b"],
                 hover_color=t["hover"], font=font(13),
+                text_color=t["text_main"],
                 command=self._toggle_view)
             self._btn_view.pack(side="right")
 
@@ -432,7 +433,7 @@ class DetailPage:
             sl += " ↓" if self._dm.data.get("sort_desc") else " ↑"
             btn_s = ctk.CTkButton(sh, text=f"↕  {sl}", width=160, height=26,
                                    fg_color=t["btn_toggle_a"], hover_color=t["hover"],
-                                   font=font(11),
+                                   text_color=t["text_main"], font=font(11),
                                    command=lambda: SortMenu(
                                        self._app_win, btn_s, self._dm,
                                        partial(self._refresh_content)))
@@ -451,7 +452,8 @@ class DetailPage:
         if self._btn_view:
             self._btn_view.configure(
                 text="🔲" if new_mode == "list" else "📋",
-                fg_color=t["btn_toggle_a"] if new_mode == "list" else t["btn_toggle_b"])
+                fg_color=t["btn_toggle_a"] if new_mode == "list" else t["btn_toggle_b"],
+                text_color=t["text_main"])
         self._refresh_content()
 
     # ── 视频操作 ──────────────────────────────────────
