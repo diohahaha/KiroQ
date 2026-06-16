@@ -553,7 +553,11 @@ _THUMB_DIR   = os.path.join(os.path.expanduser("~"), ".anime_tracker_thumbs")
 _thumb_mem: "collections.OrderedDict[tuple, Image.Image]" = collections.OrderedDict()
 _THUMB_MEM_MAX = 400
 _thumb_sem   = threading.Semaphore(3)   # 最多同时 3 个 ffmpeg 进程
-_BIN_DIR = os.path.join(os.path.dirname(__file__), "bin")
+# bin/ 优先找 EXE 同目录（支持压缩包分发），其次找源码目录
+if getattr(_sys_mod, 'frozen', False):
+    _BIN_DIR = os.path.join(os.path.dirname(_sys_mod.executable), "bin")
+else:
+    _BIN_DIR = os.path.join(os.path.dirname(__file__), "bin")
 _FFMPEG_PATHS = [
     os.path.join(_BIN_DIR, "ffmpeg.exe"),
     "ffmpeg",
