@@ -372,9 +372,13 @@ def confirm_dialog(parent, title: str, message: str) -> bool:
     result = [False]
     dlg = ctk.CTkToplevel(parent)
     dlg.title(title)
-    dlg.geometry("340x140")
     dlg.resizable(False, False)
     dlg.grab_set(); dlg.lift(); dlg.focus_force()
+    # 居中于父窗口
+    parent.update_idletasks()
+    px = parent.winfo_rootx() + (parent.winfo_width() - 340) // 2
+    py = parent.winfo_rooty() + (parent.winfo_height() - 140) // 2
+    dlg.geometry(f"340x140+{px}+{py}")
     set_window_icon(dlg)
     ctk.CTkLabel(dlg, text=message, font=font(13), wraplength=300).pack(pady=(24,16))
     row = ctk.CTkFrame(dlg, fg_color="transparent"); row.pack()

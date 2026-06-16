@@ -12,14 +12,21 @@ import bangumi as bgm
 
 log = logging.getLogger(__name__)
 
+def _center_window(win, w: int, h: int, parent):
+    """将弹窗居中于父窗口"""
+    parent.update_idletasks()
+    px = parent.winfo_rootx() + (parent.winfo_width() - w) // 2
+    py = parent.winfo_rooty() + (parent.winfo_height() - h) // 2
+    win.geometry(f"{w}x{h}+{px}+{py}")
+
 
 # ── 编辑信息弹窗 ──────────────────────────────────────
 class EditMetaDialog(ctk.CTkToplevel):
     def __init__(self, parent, folder_path: str, meta: FolderMeta, on_save):
         super().__init__(parent)
         self.title("编辑番剧信息")
-        self.geometry("560x660")
         self.resizable(False, False)
+        _center_window(self, 560, 660, parent)
         self.grab_set(); self.lift(); self.focus_force()
         set_window_icon(self)
         self._folder  = folder_path
@@ -237,8 +244,8 @@ class SettingsDialog(ctk.CTkToplevel):
     def __init__(self, parent, settings: dict, on_save, on_refetch_all=None):
         super().__init__(parent)
         self.title("设置")
-        self.geometry("500x480")
         self.resizable(False, False)
+        _center_window(self, 500, 480, parent)
         self.grab_set(); self.lift(); self.focus_force()
         self.protocol("WM_DELETE_WINDOW", self._save_and_close)
         set_window_icon(self)
