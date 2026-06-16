@@ -1,56 +1,40 @@
-"""平滑滚动容器 — 用原生 Canvas + Scrollbar 替代 CTkScrollableFrame
+"""平滑滚动容器 — Canvas + 叠加滚动条
 
-全局滚轮策略：在 root 上绑定一次，用坐标判断是否在本区域内，
-不再 bind/unbind（消除快速移动鼠标时的频繁绑定操作）。
-
-滚动条策略：叠加在 Canvas 右侧边缘（place），不参与 pack 布局。
-内容超出时显示并自动缩小内容区宽度避让；内容够长时完全隐藏。
+滚动条用 place 浮在右侧，不参与 pack 布局。
+内容区始终预留 8px 给滚动条，避免遮挡。
 """
 import customtkinter as ctk
 from tkinter import Canvas
 from config import tc
 
-SB_W = 8  # 滚动条宽度（叠加不占布局）
+SB_W = 8  # 右侧预留宽度
 
 
 class SmoothScrollFrame(ctk.CTkFrame):
-    """Canvas 驱动的滚动区域
-
-    用法：
-        scroll = SmoothScrollFrame(parent, fg_color="transparent")
-        btn = ctk.CTkButton(scroll.content, text="hello")
-        btn.pack()
-    """
 
     def __init__(self, parent, **kwargs):
         super().__init__(parent, **kwargs)
 
-        # Canvas（填满全部空间）
         self._canvas = Canvas(self, highlightthickness=0, bd=0,
                               bg=self._lookup_bg(kwargs.get("fg_color", "transparent")))
         self._canvas.configure(yscrollcommand=self._on_scroll)
         self._canvas.pack(fill="both", expand=True)
 
-        # Scrollbar（叠加在右侧，不参与布局）
-        self._scrollbar = ctk.CTkScrollbar(self, command=self._on_scrollbar, width=SB_W)
+        self._scrollbar = ctk.CTkScrollbar(self, command=self._on_scrollbar)
 
-        # 内部容器
         self.content = ctk.CTkFrame(self._canvas, fg_color="transparent")
         self._win_id = self._canvas.create_window((0, 0), window=self.content,
                                                    anchor="nw", tags="content")
 
-        # 内容尺寸变化 → 更新 scrollregion
         self.content.bind("<Configure>", self._on_content_configure)
         self._canvas.bind("<Configure>", self._on_canvas_configure)
 
-        # 全局滚轮：在 root 上绑定一次，解绑放在 destroy()
         self._wheel_bound = False
         self._wheel_root = None
         self._wheel_ids = []
         self._bind_wheel_once()
 
     def _bind_wheel_once(self):
-        """在 toplevel 上绑定一次滚轮，用坐标判断是否在区域内"""
         if self._wheel_bound:
             return
         self._wheel_root = self.winfo_toplevel()
@@ -61,7 +45,6 @@ class SmoothScrollFrame(ctk.CTkFrame):
         self._wheel_bound = True
 
     def _on_mousewheel(self, event):
-        """滚轮事件：检查鼠标是否在本区域内，是则滚动"""
         if not self.winfo_exists():
             return
         x, y = event.x_root, event.y_root
@@ -90,31 +73,18 @@ class SmoothScrollFrame(ctk.CTkFrame):
         self._update_scrollbar()
 
     def _on_canvas_configure(self, event):
-        """Canvas 宽度变化时同步内容宽度"""
         if event.width > 0:
-            self._apply_width(event.width)
+            # 内容区始终比 canvas 窄 SB_W，右侧留给滚动条
+            self._canvas.itemconfig(self._win_id, width=event.width - SB_W)
         self._update_scrollbar()
 
-    def _apply_width(self, canvas_w: int):
-        """设置内容区宽度（滚动条可见时预留 SB_W 避让）"""
-        if not self.winfo_exists() or canvas_w <= 0:
-            return
-        w = canvas_w - SB_W if self._scrollbar.winfo_ismapped() else canvas_w
-        self._canvas.itemconfig(self._win_id, width=w)
-
     def _update_scrollbar(self):
-        """内容超出 → 显示滚动条并缩小内容区；内容够长 → 完全隐藏"""
         try:
             bbox = self._canvas.bbox("all")
-            overflow = bbox and bbox[3] > self._canvas.winfo_height()
-            if overflow:
-                if not self._scrollbar.winfo_ismapped():
-                    self._scrollbar.place(relx=1.0, rely=0, relheight=1.0, anchor="ne")
-                    self._apply_width(self._canvas.winfo_width())
+            if bbox and bbox[3] > self._canvas.winfo_height():
+                self._scrollbar.place(relx=1.0, rely=0, relheight=1.0, anchor="ne")
             else:
-                if self._scrollbar.winfo_ismapped():
-                    self._scrollbar.place_forget()
-                    self._apply_width(self._canvas.winfo_width())
+                self._scrollbar.place_forget()
         except Exception:
             pass
 
@@ -130,7 +100,6 @@ class SmoothScrollFrame(ctk.CTkFrame):
         self._scrollbar.set(*args)
 
     def destroy(self):
-        """解绑全局滚轮后销毁"""
         if self._wheel_bound and self._wheel_root:
             for seq, fid in self._wheel_ids:
                 try:
