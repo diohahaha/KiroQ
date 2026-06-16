@@ -26,17 +26,25 @@ class NavBar(ctk.CTkFrame):
 
         # 透明按钮：深色模式白字，亮色模式深字
         _tbtn = "#ffffff" if t.get("_mode") == "dark" else t["text_main"]
-        ctk.CTkButton(right, text="⚙", width=36, height=32,
+        self._btn_settings = ctk.CTkButton(right, text="⚙", width=36, height=32,
                       fg_color="transparent", hover_color=t["link_hover"],
                       text_color=_tbtn, font=font(16),
-                      command=on_settings).pack(side="left", padx=(0,4))
-        ctk.CTkButton(right, text="📁 根目录", width=100, height=32,
+                      command=on_settings)
+        self._btn_settings.pack(side="left", padx=(0,4))
+        self._btn_root = ctk.CTkButton(right, text="📁 根目录", width=100, height=32,
                       fg_color=t["btn_toggle_a"], hover_color=t["link_hover"],
                       text_color="#ffffff", font=font(12),
-                      command=on_pick_root).pack(side="left")
+                      command=on_pick_root)
+        self._btn_root.pack(side="left")
 
     def rebuild(self, nav_stack: list):
         t = tc()
+        # 同步右侧按钮文字颜色（透明按钮随主题切换）
+        _tbtn = "#ffffff" if t.get("_mode") == "dark" else t["text_main"]
+        if hasattr(self, '_btn_settings'):
+            self._btn_settings.configure(text_color=_tbtn)
+        if hasattr(self, '_btn_root'):
+            self._btn_root.configure(text_color="#ffffff")
         for w in self._crumb_frame.winfo_children(): w.destroy()
         _tbtn = "#ffffff" if t.get("_mode") == "dark" else t["text_main"]
         ctk.CTkButton(self._crumb_frame, text="⌂ 首页", width=72, height=32,
