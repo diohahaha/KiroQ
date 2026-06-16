@@ -470,7 +470,10 @@ class AnimeTrackerApp(ctk.CTk):
     # ── 视频打开 ──────────────────────────────────────
     def _open_video(self, file_path: str, folder_path: str):
         player = self._dm.settings().get("player_path","")
-        open_video(file_path, player)
+        # 获取同目录视频列表供播放器窗标题监控
+        from core.data_manager import get_video_files
+        videos = get_video_files(folder_path)
+        open_video(file_path, player, folder_path, self._dm, videos)
         self._dm.mark_watched(file_path, folder_path)
 
     # ── 右键菜单 ──────────────────────────────────────

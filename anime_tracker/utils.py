@@ -110,10 +110,59 @@ def invalidate_cover(folder_path: str):
     log.debug(f"invalidated {len(to_del)} cover cache entries for {folder_path}")
 
 # ── 播放器 ────────────────────────────────────────────
-def open_video(path: str, player_path: str = ""):
+def _watch_player_thread(proc, folder_path: str, videos: list[str], dm):
+    """后台线程：监控播放器窗口标题，关闭后批量标记已看"""
+    if _sys_mod.platform != "win32":
+        return
+    import time
+    time.sleep(1.5)  # 等播放器启动
+    played: set[str] = set()
+    _win_titles: dict[int, str] = {}
+
+    def _enum_cb(hwnd, _):
+        try:
+            pid = ctypes.c_ulong()
+            ctypes.windll.user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+            if pid.value == proc.pid and ctypes.windll.user32.IsWindowVisible(hwnd):
+                buf = ctypes.create_unicode_buffer(256)
+                ctypes.windll.user32.GetWindowTextW(hwnd, buf, 256)
+                title = buf.value.strip()
+                if title:
+                    _win_titles[hwnd] = title
+        except Exception:
+            pass
+        return True
+
+    _EnumWindows = ctypes.windll.user32.EnumWindows
+    _WNDENUMPROC = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_int, ctypes.py_object)
+
+    while proc.poll() is None:
+        try:
+            _win_titles.clear()
+            _EnumWindows(_WNDENUMPROC(_enum_cb), 0)
+            for title in _win_titles.values():
+                for v in videos:
+                    if v in title or title.startswith(v.rsplit('.', 1)[0]):
+                        played.add(v)
+        except Exception:
+            pass
+        time.sleep(2)
+
+    if played:
+        for v in played:
+            fp = os.path.normpath(os.path.join(folder_path, v))
+            dm.mark_watched(fp, folder_path)
+        dm.save()
+
+
+def open_video(path: str, player_path: str = "",
+               folder_path: str = "", dm=None, videos: list[str] | None = None):
     import subprocess, platform
     if player_path and os.path.isfile(player_path):
-        subprocess.Popen([player_path, path])
+        proc = subprocess.Popen([player_path, path], **_SUBPROCESS_KW)
+        if folder_path and dm and videos:
+            threading.Thread(target=_watch_player_thread,
+                             args=(proc, folder_path, videos, dm), daemon=True).start()
         return
     sys = platform.system()
     if sys == "Windows":   os.startfile(path)

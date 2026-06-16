@@ -279,8 +279,10 @@ class VideoContextMenu(PopupMenu):
         from utils import open_video
         self.close()
         player = self._dm.settings().get("player_path", "")
+        # 仅第一个文件带监控（避免多进程），后续文件直接打开
+        videos = get_video_files(self._folder_path)
         for fp in self._file_paths:
-            open_video(fp, player)
+            open_video(fp, player, self._folder_path, self._dm, videos)
             self._dm.mark_watched(fp, self._folder_path)
         self._refresh()
 
