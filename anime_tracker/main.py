@@ -1,5 +1,5 @@
 """入口 + App 顶层路由"""
-import os, sys, time, threading, logging
+import os, sys, time, threading, logging, ctypes
 from collections import OrderedDict
 
 # EXE 打包后需要把自身目录加入搜索路径
@@ -46,6 +46,12 @@ import bangumi as bgm
 
 class AnimeTrackerApp(ctk.CTk):
     def __init__(self):
+        # 设置任务栏图标 ID（否则源码运行时任务栏显示 Python 图标）
+        if sys.platform == "win32":
+            try:
+                ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("kiroq.app")
+            except Exception:
+                pass
         super().__init__()
         self._dm         = DataManager()
         s                = self._dm.settings()
