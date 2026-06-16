@@ -240,6 +240,7 @@ class SettingsDialog(ctk.CTkToplevel):
         self.geometry("500x480")
         self.resizable(False, False)
         self.grab_set(); self.lift(); self.focus_force()
+        self.protocol("WM_DELETE_WINDOW", self._save_and_close)
         set_window_icon(self)
         self._s            = dict(settings)
         self._on_save      = on_save
