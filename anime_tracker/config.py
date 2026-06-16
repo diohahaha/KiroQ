@@ -1,7 +1,7 @@
 import platform, os, sys, winreg
 
 APP_NAME    = "KiroQ"
-APP_VERSION = "1.0.0"
+APP_VERSION = "1.1.0"
 DATA_FILE   = os.path.join(os.path.expanduser("~"), ".kiroq_data.json")
 DATA_VERSION = 3
 

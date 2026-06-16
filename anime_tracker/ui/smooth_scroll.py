@@ -1,13 +1,11 @@
-"""平滑滚动容器 — Canvas + 叠加滚动条
+"""平滑滚动容器 — Canvas + pack 布局滚动条
 
-滚动条用 place 浮在右侧，不参与布局。
-显示时内容区自动缩宽避让；隐藏时内容填满。
+滚动条用 pack(side="right") 参与布局，出现/消失时 Canvas 自动伸缩。
+不使用 place 浮层，不需要手动计算宽度避让。
 """
 import customtkinter as ctk
 from tkinter import Canvas
 from config import tc
-
-SB_W = 16  # CTkScrollbar 默认宽度
 
 
 class SmoothScrollFrame(ctk.CTkFrame):
@@ -15,12 +13,17 @@ class SmoothScrollFrame(ctk.CTkFrame):
     def __init__(self, parent, **kwargs):
         super().__init__(parent, **kwargs)
 
-        self._canvas = Canvas(self, highlightthickness=0, bd=0,
+        # 内层横向容器：Canvas 在左，Scrollbar 在右
+        self._inner = ctk.CTkFrame(self, fg_color="transparent")
+        self._inner.pack(fill="both", expand=True)
+
+        self._scrollbar = ctk.CTkScrollbar(self._inner, command=self._on_scrollbar)
+        # 先不 pack，等内容溢出再显示
+
+        self._canvas = Canvas(self._inner, highlightthickness=0, bd=0,
                               bg=self._lookup_bg(kwargs.get("fg_color", "transparent")))
         self._canvas.configure(yscrollcommand=self._on_scroll)
-        self._canvas.pack(fill="both", expand=True)
-
-        self._scrollbar = ctk.CTkScrollbar(self, command=self._on_scrollbar)
+        self._canvas.pack(side="left", fill="both", expand=True)
 
         self.content = ctk.CTkFrame(self._canvas, fg_color="transparent")
         self._win_id = self._canvas.create_window((0, 0), window=self.content,
@@ -76,30 +79,20 @@ class SmoothScrollFrame(ctk.CTkFrame):
 
     def _on_canvas_configure(self, event):
         if event.width > 0:
-            self._sync_width(event.width)
+            self._canvas.itemconfig(self._win_id, width=event.width)
         self._update_scrollbar()
 
-    def _sync_width(self, canvas_w: int):
-        """内容宽度 = canvas 宽度 -（滚动条可见 ? SB_W : 0）"""
-        if not self.winfo_exists():
-            return
-        w = canvas_w - (SB_W if self._scrollbar.winfo_ismapped() else 0)
-        self._canvas.itemconfig(self._win_id, width=w)
-
     def _update_scrollbar(self):
-        """内容超出显示滚动条，否则隐藏"""
+        """内容超出显示滚动条（pack right），否则隐藏"""
         try:
             bbox = self._canvas.bbox("all")
             overflow = bbox and bbox[3] > self._canvas.winfo_height()
             if overflow:
                 if not self._scrollbar.winfo_ismapped():
-                    self._scrollbar.place(relx=1.0, rely=0, relheight=1.0,
-                                          anchor="ne")
-                    self._sync_width(self._canvas.winfo_width())
+                    self._scrollbar.pack(side="right", fill="y")
             else:
                 if self._scrollbar.winfo_ismapped():
-                    self._scrollbar.place_forget()
-                    self._sync_width(self._canvas.winfo_width())
+                    self._scrollbar.pack_forget()
         except Exception:
             pass
 
