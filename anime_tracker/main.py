@@ -326,7 +326,7 @@ class AnimeTrackerApp(ctk.CTk):
         stat_str = (f"📺 在看 {total_watching}  ✅ 完结 {total_done}  "
                     f"▶ 已看 {total_watched} 集  ⏱ {t_str}")
         ctk.CTkLabel(toolbar, text=stat_str, font=font(11),
-                     text_color=tc()["text_dim"]).pack(side="left", padx=12)
+                     text_color=tc()["text_main"]).pack(side="left", padx=12)
         # 后台补充扫描未缓存的视频
         if scanned > 0:
             self.after(300, lambda: self._scan_durations_bg(root))
@@ -337,7 +337,8 @@ class AnimeTrackerApp(ctk.CTk):
             t_ = tc()
             btn_name_toggle.configure(
                 text="📝 短名" if self._show_clean_names else "📝 原名",
-                fg_color=t_["btn_toggle_b"] if self._show_clean_names else t_["btn_toggle_a"])
+                fg_color=t_["btn_toggle_b"] if self._show_clean_names else t_["btn_toggle_a"],
+                text_color=t_["text_main"])
             self._refresh()
 
         t_ = tc()
@@ -346,7 +347,7 @@ class AnimeTrackerApp(ctk.CTk):
             width=90, height=30,
             fg_color=t_["btn_toggle_b"] if self._show_clean_names else t_["btn_toggle_a"],
             hover_color=t_["hover"], font=font(11),
-            command=toggle_names)
+            text_color=t_["text_main"], command=toggle_names)
         btn_name_toggle.pack(side="right", padx=(0, 6), pady=7)
 
         # 排序按钮
@@ -355,6 +356,7 @@ class AnimeTrackerApp(ctk.CTk):
         sl += " ↓" if self._dm.data.get("sort_desc") else " ↑"
         btn_sort = ctk.CTkButton(toolbar, text=f"↕  {sl}", width=160, height=30,
                                   fg_color=t_["btn_toggle_a"], hover_color=t_["hover"], font=font(12),
+                                  text_color=t_["text_main"],
                                   command=lambda: SortMenu(self, btn_sort, self._dm,
                                                            partial(self._show_root, root, search)))
         btn_sort.pack(side="right", padx=12, pady=7)

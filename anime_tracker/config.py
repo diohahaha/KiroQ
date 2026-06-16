@@ -148,13 +148,8 @@ def _build_colors(preset_key: str) -> dict:
     base["cb_hover"]     = _blend(a["accent"], base["bg_card"], 0.5)
     base["crumb_last"]   = a["accent"]          # 面包屑当前页
     base["link_hover"]   = _blend(a["accent"], base["bg_nav"], 0.5)
-    # 亮色模式按钮用浅色（深色太沉重），深色模式用深色
-    if mode == "light":
-        base["btn_toggle_a"] = _blend(a["accent"], "#ffffff", 0.7)
-        base["btn_toggle_b"] = _blend(a["accent"], "#ffffff", 0.5)
-    else:
-        base["btn_toggle_a"] = a["btn"]             # 视图切换按钮
-        base["btn_toggle_b"] = a["btn_hover"]
+    base["btn_toggle_a"] = a["btn"]             # 视图切换按钮
+    base["btn_toggle_b"] = a["btn_hover"]
     base["text_dim"]     = _blend(a["accent"], base["text_main"], 0.45)
     base["empty_text"]   = _blend(a["accent"], base["bg_detail"], 0.3)
 

@@ -279,7 +279,7 @@ class DetailPage:
         # 「···」菜单
         btn_more = ctk.CTkButton(name_row, text="···", width=36, height=28,
                                   fg_color="transparent", hover_color=t["hover"],
-                                  font=font(16),
+                                  text_color=t["text_main"], font=font(16),
                                   command=lambda: MoreMenu(
                                       self._app_win, btn_more,
                                       folder_path, display_name,
