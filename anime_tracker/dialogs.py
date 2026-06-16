@@ -356,11 +356,12 @@ class SettingsDialog(ctk.CTkToplevel):
         self._s["theme_preset"] = key
         from config import apply_theme
         apply_theme(key)
-        # 完整刷新主窗口：导航栏 + 内容区全部重建
+        # 清除所有缓存页（旧主题色），完整重建
         p = self._parent
+        p._clear_page_cache()
         p._navbar.configure(fg_color=tc()["bg_nav"])
         p._navbar.rebuild(p._nav.stack)
-        p._refresh()  # 内容区也即时刷新
+        p._refresh()
         p.update_idletasks()
 
     def _sec(self, title):

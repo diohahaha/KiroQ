@@ -675,6 +675,7 @@ class AnimeTrackerApp(ctk.CTk):
     def _apply_theme_and_refresh(self, s: dict):
         """弹窗关闭后：应用主题 → 重建导航栏 → 刷新内容"""
         apply_theme(s.get("theme_preset", "dark_blue"))
+        self._clear_page_cache()
         self._navbar.configure(fg_color=tc()["bg_nav"])
         self._navbar.rebuild(self._nav.stack)
         self.update_idletasks()
