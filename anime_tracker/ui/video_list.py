@@ -169,14 +169,14 @@ class VideoList:
         dur = self._dm.get_duration(fp)
         if dur and dur > 0:
             ctk.CTkLabel(row, text=_fmt_dur(dur),
-                         font=font(10), text_color=t["text_dim"],
-                         width=55, anchor="e"
-                         ).pack(side="right", padx=(0, 4))
+                         font=font(9), text_color=t["text_dim"],
+                         width=46, anchor="e"
+                         ).pack(side="right", padx=(0, 2))
 
         # ── 已看标记（最右侧）──
         lbl_w = ctk.CTkLabel(row, text="✓ 看",
-                             font=font(10), text_color=t["watched_text"],
-                             width=38)
+                             font=font(9), text_color=t["watched_text"],
+                             width=32)
         if is_w:
             lbl_w.pack(side="right", padx=(0, 8))
 
@@ -216,22 +216,22 @@ class VideoList:
         """创建指示器控件"""
         if self._select_mode:
             if is_selected:
-                ind = ctk.CTkLabel(parent, text="✓", font=font(12, "bold"),
+                ind = ctk.CTkLabel(parent, text="✓", font=font(10, "bold"),
                                    text_color="#ffffff", fg_color=t["accent"],
-                                   corner_radius=5, width=22, height=22)
+                                   corner_radius=4, width=18, height=18)
             else:
-                ind = ctk.CTkLabel(parent, text="", font=font(12),
+                ind = ctk.CTkLabel(parent, text="", font=font(10),
                                    text_color=t["text_dim"],
                                    fg_color=t["cb_unchecked"],
-                                   corner_radius=5, width=22, height=22)
+                                   corner_radius=4, width=18, height=18)
         else:
             # 默认模式：未看显示圆点，已看隐藏
             if is_watched:
-                ind = ctk.CTkLabel(parent, text="", font=font(14), width=22)
+                ind = ctk.CTkLabel(parent, text="", font=font(12), width=16)
             else:
-                ind = ctk.CTkLabel(parent, text="●", font=font(14),
-                                   text_color=t["text_dim"], width=22)
-        ind.pack(side="left", padx=(6, 0))
+                ind = ctk.CTkLabel(parent, text="●", font=font(12),
+                                   text_color=t["text_dim"], width=16)
+        ind.pack(side="left", padx=(4, 0))
         return ind
 
     def _indicator_cfg(self, is_selected: bool, is_watched: bool, t: dict) -> dict:
@@ -239,15 +239,15 @@ class VideoList:
         if self._select_mode:
             if is_selected:
                 return {"text": "✓", "text_color": "#ffffff",
-                        "fg_color": t["accent"], "font": font(12, "bold")}
+                        "fg_color": t["accent"], "font": font(10, "bold")}
             else:
                 return {"text": "", "text_color": t["text_dim"],
-                        "fg_color": t["cb_unchecked"], "font": font(12)}
+                        "fg_color": t["cb_unchecked"], "font": font(10)}
         else:
             # 默认模式：已看隐藏圆点
             return {"text": "" if is_watched else "●",
                     "text_color": t["text_dim"],
-                    "fg_color": "transparent", "font": font(14)}
+                    "fg_color": "transparent", "font": font(12)}
 
     # ── 选择交互 ──────────────────────────────────────
     def _on_indicator_click(self, fp: str, event=None):
