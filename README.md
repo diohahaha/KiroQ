@@ -4,10 +4,11 @@
 
 ## 安装
 
-### 方式一：下载 EXE（推荐，无需 Python）
+### 方式一：下载压缩包（推荐，无需 Python）
 
-从 [Releases](../../releases) 下载 `KiroQ.exe`，双击运行。数据保存在 `C:\Users\<用户名>\.kiroq_data.json`。
+从 [Releases](../../releases) 下载 `KiroQ-v1.1.0.zip`，解压到任意文件夹，双击 `KiroQ.exe` 运行。
 
+> 压缩包内含 ffmpeg，解压即用，无需额外安装。
 > Windows Defender 可能误报，点"更多信息 → 仍要运行"即可。
 
 ### 方式二：源码运行
@@ -19,7 +20,7 @@ pip install -r requirements.txt
 python anime_tracker/main.py
 ```
 
-内置 ffmpeg/ffprobe，无需额外安装。
+> 源码运行需自行下载 ffmpeg 放入 `anime_tracker/bin/`（或安装到系统 PATH），否则无视频缩略图。
 
 ## 功能
 
