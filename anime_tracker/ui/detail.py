@@ -276,10 +276,11 @@ class DetailPage:
                           command=partial(webbrowser.open, meta.link)
                           ).pack(side="right", padx=(4,0))
 
-        # 「···」菜单
+        # 「···」菜单（透明底：深色白字，亮色深字）
+        _tbtn = "#ffffff" if t.get("_mode") == "dark" else t["text_main"]
         btn_more = ctk.CTkButton(name_row, text="···", width=36, height=28,
                                   fg_color="transparent", hover_color=t["hover"],
-                                  text_color=t["text_main"], font=font(16),
+                                  text_color=_tbtn, font=font(16),
                                   command=lambda: MoreMenu(
                                       self._app_win, btn_more,
                                       folder_path, display_name,

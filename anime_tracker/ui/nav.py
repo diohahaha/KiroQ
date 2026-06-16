@@ -24,9 +24,11 @@ class NavBar(ctk.CTkFrame):
                                           textvariable=search_var, font=font(12))
         self.search_entry.pack(side="left", padx=(0,6))
 
+        # 透明按钮：深色模式白字，亮色模式深字
+        _tbtn = "#ffffff" if t.get("_mode") == "dark" else t["text_main"]
         ctk.CTkButton(right, text="⚙", width=36, height=32,
                       fg_color="transparent", hover_color=t["link_hover"],
-                      text_color=t["text_main"], font=font(16),
+                      text_color=_tbtn, font=font(16),
                       command=on_settings).pack(side="left", padx=(0,4))
         ctk.CTkButton(right, text="📁 根目录", width=100, height=32,
                       fg_color=t["btn_toggle_a"], hover_color=t["link_hover"],
@@ -36,9 +38,10 @@ class NavBar(ctk.CTkFrame):
     def rebuild(self, nav_stack: list):
         t = tc()
         for w in self._crumb_frame.winfo_children(): w.destroy()
+        _tbtn = "#ffffff" if t.get("_mode") == "dark" else t["text_main"]
         ctk.CTkButton(self._crumb_frame, text="⌂ 首页", width=72, height=32,
                       fg_color="transparent", hover_color=t["link_hover"],
-                      text_color=t["text_main"], font=font(12),
+                      text_color=_tbtn, font=font(12),
                       command=self._on_home).pack(side="left", pady=10)
         for i, (path, name) in enumerate(nav_stack[1:], start=1):
             ctk.CTkLabel(self._crumb_frame, text=" › ", font=font(14),
