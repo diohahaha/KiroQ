@@ -1,0 +1,16 @@
+appId: com.kiroq.app
+productName: KiroQ
+directories:
+  output: release
+files:
+  - dist/**/*
+  - dist-electron/**/*
+extraResources:
+  - from: bin
+    to: ffmpeg
+win:
+  target: nsis
+  icon: build/icon.ico
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true

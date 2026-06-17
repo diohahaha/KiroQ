@@ -1,66 +1,29 @@
-# 🎬 KiroQ v1.1
+# KiroQ
 
-本地动漫观看进度管理工具 — 番剧文件夹浏览、Bangumi 元数据抓取、观看进度追踪。
+本地动漫观看进度管理工具。
 
-## 安装
+## 版本
 
-### 方式一：下载压缩包（推荐，无需 Python）
+| 版本 | 技术栈 | 状态 |
+|------|--------|------|
+| `v2/` (2.0) | Electron + TypeScript + React | 当前 |
+| `v1/` (1.1) | Python + customtkinter | 只读保留 |
 
-从 [Releases](../../releases) 下载 `KiroQ-v1.1.0.zip`，解压到任意文件夹，双击 `KiroQ.exe` 运行。
+## 快速开始
 
-> 压缩包内含 ffmpeg，解压即用，无需额外安装。
-> Windows Defender 可能误报，点"更多信息 → 仍要运行"即可。
+**v2.0**：下载 `KiroQ_v2_full.zip`，解压双击 `KiroQ.exe`
 
-### 方式二：源码运行
+**v1.1**：见 [v1 README](v1/README.md)
 
-```bash
-git clone https://github.com/diohahaha/KiroQ.git
-cd KiroQ
-pip install -r requirements.txt
-python anime_tracker/main.py
-```
+## 数据存储
 
-> 源码运行需自行下载 ffmpeg 放入 `anime_tracker/bin/`（或安装到系统 PATH），否则无视频缩略图。
-
-## 功能
-
-- 📂 自动扫描本地动漫文件夹，宫格/列表双视图
-- 🎬 视频缩略图（ffmpeg 截帧）+ 精确时长统计（ffprobe）
-- 🔍 Bangumi 自动抓取元数据（名称、评分、简介、封面）
-- ✅ 视频观看进度标记、累计观看时间统计
-- ☑ 多选批量操作（视频标记、番剧置顶/隐藏/状态/清记录）
-- 🎨 14 套主题（深色/亮色 × 7 种配色）
-- 📌 置顶、隐藏、状态标签（在看/想看/已完结/搁置）
-- 💾 窗口大小位置自动记忆
-
-## 快捷键
-
-| 键 | 功能 |
-|----|------|
-| Backspace | 返回上一级 |
-| Ctrl+F | 聚焦搜索框 |
-| F5 | 刷新 |
-| Escape | 退出选择模式 / 清空搜索 |
-
-## 数据文件
-
-所有数据存储在本地：
-
-- `C:\Users\<用户名>\.kiroq_data.json` — 观看记录、元数据、设置
-- `C:\Users\<用户名>\.kiroq.log` — 运行日志
-- `C:\Users\<用户名>\.anime_tracker_thumbs\` — 视频缩略图缓存
-
----
+- `%APPDATA%/KiroQ/kiroq-data.json` — 观看记录、元数据
+- `%USERPROFILE%/.kiroq_data.json` — 旧版 v1 数据（v2 自动迁移）
 
 ## 免责声明
 
-本软件按"原样"提供，不提供任何明示或暗示的担保。使用本软件即表示您同意：
-
-- **数据风险**：数据存储在本地 JSON 文件，建议定期备份。开发者对任何数据丢失或损坏不承担责任。
-- **外部服务**：Bangumi 抓取功能依赖第三方 API，可用性由服务提供方决定，与开发者无关。
-- **版权声明**：本软件仅管理本地文件，不提供、不存储、不分发任何受版权保护的内容。用户对自己硬盘上的文件负责。
-- **使用限制**：仅供个人学习和研究使用。
+本软件按"原样"提供，仅供个人学习研究使用。数据存储在本地，建议定期备份。
 
 ## License
 
-MIT — 详见 [LICENSE](LICENSE)
+MIT

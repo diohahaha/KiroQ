@@ -1,0 +1,70 @@
+/* 全局样式 — KiroQ 基础 */
+
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body, #root {
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  font-family: 'Microsoft YaHei UI', 'PingFang SC', 'Noto Sans CJK SC', sans-serif;
+  background-color: var(--kq-bg-primary);
+  color: var(--kq-text-primary);
+  -webkit-font-smoothing: auto;
+  -moz-osx-font-smoothing: auto;
+}
+
+/* 自定义滚动条 */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--kq-border);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--kq-text-dim);
+}
+
+/* 选中文本颜色 */
+::selection {
+  background: var(--kq-accent);
+  color: #ffffff;
+}
+
+/* 禁止图片拖拽 */
+img {
+  -webkit-user-drag: none;
+  user-select: none;
+}
+
+/* 全局表单元素主题 */
+select, input, textarea {
+  background-color: var(--kq-bg-card);
+  color: var(--kq-text-primary);
+  border-color: var(--kq-border);
+  font-family: inherit;
+  -webkit-font-smoothing: inherit;
+  -moz-osx-font-smoothing: inherit;
+}
+select option {
+  background-color: var(--kq-bg-card);
+  color: var(--kq-text-primary);
+}
+select:focus, input:focus, textarea:focus {
+  outline: none;
+  border-color: var(--kq-accent);
+}
+input[type="checkbox"] {
+  accent-color: var(--kq-accent);
+}
+button {
+  color: inherit;
+}

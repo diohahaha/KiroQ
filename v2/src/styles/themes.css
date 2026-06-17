@@ -1,0 +1,42 @@
+/* KiroQ 主题 — CSS 变量默认值（dark_blue），JS 直接改 :root.style */
+:root {
+  --kq-bg-nav:        #1a1a2e;
+  --kq-bg-detail:     #12121e;
+  --kq-bg-card:       #1e1e2e;
+  --kq-bg-toolbar:    #111122;
+  --kq-bg-primary:    #1a1a2e;
+  --kq-bg-secondary:  #1e1e2e;
+  --kq-border:        #2a2a4a;
+  --kq-border-pin:    #ffaa00;
+  --kq-border-hover:  #5555aa;
+  --kq-text-primary:  #ccccdd;
+  --kq-text-dim:      #666688;
+  --kq-text-muted:    #888888;
+  --kq-desc-bg:       #151525;
+  --kq-hover:         #2a2a4e;
+  --kq-row-even:      #1a1a2e;
+  --kq-row-odd:       #161624;
+  --kq-row-hover:     #252540;
+  --kq-cb-checked:    #3a6eaa;
+  --kq-cb-unchecked:  #333350;
+  --kq-cb-hover:      #444466;
+  --kq-watched-bg:    #3a5a3a;
+  --kq-watched-fg:    #88cc88;
+  --kq-watched-text:  #3a4a3a;
+  --kq-unwatched-text:#44445a;
+  --kq-hidden-card:   #111118;
+  --kq-canvas-bg:     #1a1a2e;
+  --kq-btn-toggle-a:  #1e1e3e;
+  --kq-btn-toggle-b:  #2a3a2a;
+  --kq-sep-color:     #2a2a4a;
+  --kq-toast-bg:      #1e3a1e;
+  --kq-empty-text:    #444466;
+  --kq-link-hover:    #2a2a4e;
+  --kq-crumb-sep:     #555577;
+  --kq-crumb-last:    #3a6eaa;
+  --kq-crumb-mid:     #666688;
+  --kq-accent:        #3a6eaa;
+  --kq-accent-hover:  #4a7eba;
+  --kq-btn:           #1a3a5a;
+  --kq-btn-hover:     #2a4a6a;
+}

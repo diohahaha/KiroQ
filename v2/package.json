@@ -1,0 +1,44 @@
+{
+  "name": "kiroq",
+  "version": "2.0.0",
+
+  "description": "本地动漫观看进度管理工具",
+  "main": "dist-electron/main.js",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "preview": "electron-vite preview",
+    "pack": "npm run build && electron-builder --dir",
+    "dist": "npm run build && electron-builder"
+  },
+  "dependencies": {
+
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-window": "^1.8.10",
+    "zustand": "^4.5.2",
+    "framer-motion": "^11.1.7",
+    "@radix-ui/react-switch": "^1.0.3",
+    "@radix-ui/react-select": "^2.0.0",
+    "@radix-ui/react-checkbox": "^1.0.4",
+    "@radix-ui/react-dialog": "^1.0.5",
+    "class-variance-authority": "^0.7.0",
+    "clsx": "^2.1.1",
+    "tailwind-merge": "^2.3.0",
+    "lucide-react": "^0.378.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
+    "@types/react-window": "^1.8.8",
+    "@vitejs/plugin-react": "^4.3.0",
+    "autoprefixer": "^10.4.19",
+    "electron": "^30.0.8",
+    "electron-builder": "^24.13.3",
+    "electron-vite": "^2.2.0",
+    "postcss": "^8.4.38",
+    "tailwindcss": "^3.4.4",
+    "typescript": "^5.4.5",
+    "vite": "^5.2.12"
+  }
+}
