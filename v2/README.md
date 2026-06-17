@@ -10,6 +10,12 @@ Electron + TypeScript + React + Zustand + Tailwind CSS + Framer Motion
 
 解压后双击 `KiroQ.exe` 即可启动。
 
+## 截图
+
+| 主页 | 详情页 |
+|------|--------|
+| ![home](screenshots/home.png) | ![detail](screenshots/detail.png) |
+
 ## 功能
 
 - 番剧文件夹宫格浏览，自适应列数 + 补位动画
@@ -22,24 +28,6 @@ Electron + TypeScript + React + Zustand + Tailwind CSS + Framer Motion
 - 导航面包屑、搜索、排序、短名/原名切换
 - 主页滚动位置记忆、窗口位置记忆、禁止重复启动
 
-## 截图
-
-| 主页 | 详情页 |
-|------|--------|
-| ![home](screenshots/home.png) | ![detail](screenshots/detail.png) |
-
-## 目录结构
-
-```
-v2/
-├── KiroQ.exe              # 启动器
-├── setup.bat              # 下载 ffmpeg
-├── package.json
-├── electron/              # Main process
-├── shared/types.ts        # 共享类型
-└── src/                   # Renderer (React)
-```
-
 ## 开发
 
 ```bash
@@ -49,13 +37,7 @@ npm run dev        # 开发模式
 npm run build      # 构建
 ```
 
-## 旧版
-
-v1.1 (Python/customtkinter) 在仓库 `v1/` 目录，只读保留。
-
 ## 数据存储
-
-所有数据存储在本地：
 
 - `%APPDATA%/KiroQ/kiroq-data.json` — 观看记录、元数据
 - `%APPDATA%/KiroQ/window-state.json` — 窗口位置大小
