@@ -22,6 +22,12 @@ Electron + TypeScript + React + Zustand + Tailwind CSS + Framer Motion
 - 导航面包屑、搜索、排序、短名/原名切换
 - 主页滚动位置记忆、窗口位置记忆、禁止重复启动
 
+## 截图
+
+| 主页 | 详情页 |
+|------|--------|
+| ![home](screenshots/home.png) | ![detail](screenshots/detail.png) |
+
 ## 目录结构
 
 ```
