@@ -66,14 +66,21 @@ export function DetailPage({ folderPath }: Props) {
 
   useEffect(() => { doScan() }, [doScan])
 
-  // fp 变化（切换文件夹）时重置临时 UI 状态，避免从 A 文件夹带着多选/选中项
-  // 残留到 B 文件夹。viewMode 不是简单重置为 'list'，而是重新读取新文件夹
-  // 自己保存的 videoViewMode 偏好，保留"按文件夹记忆视图模式"的语义。
-  useEffect(() => {
+  // fp 变化（切换文件夹）时同步重置临时 UI 状态——注意这里不用 useEffect。
+  // useEffect 要等这一帧画到屏幕上之后才会执行，用户会先看见一帧"标题已经
+  // 换成新文件夹、列表还是旧文件夹内容"的画面，肉眼就是切换时闪一下。
+  // 改成 render 阶段直接比较 fp 和上次渲染的 fp，不一致就立刻同步清空
+  // （这是 React 官方推荐的"根据 prop 变化调整 state"写法），保证清空后
+  // 的这一帧才会被画出来，不会露出旧内容。
+  const [prevFp, setPrevFp] = useState(fp)
+  if (fp !== prevFp) {
+    setPrevFp(fp)
     setSelectMode(false)
     setSel(new Set())
     setViewMode(meta?.videoViewMode || 'list')
-  }, [fp])
+    setSubdirs([])
+    setVideos([])
+  }
 
   // 自动抓取（进入未抓取的文件夹时）
   const settings = useSettingsStore()

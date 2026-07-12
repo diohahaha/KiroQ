@@ -137,10 +137,13 @@ export function LibraryPage() {
       { id: 'sep', label: '', type: 'separator' },
       { id: 'open-folder', label: '📂 打开文件位置' },
       { id: 'delete', label: '❌ 删除文件' },
+      { id: 'sep2', label: '', type: 'separator' },
+      { id: 'select', label: '☑ 多选' },
     ])
     if (result === 'play') window.api.launchPlayer(vp, root)
     if (result === 'open-folder') window.api.openFolder(vp)
     if (result === 'delete') { if (await window.api.deleteFile(vp)) doScan() }
+    if (result === 'select') { setSelectMode(true); setSelectedPaths(new Set([vp])); return }
     if (result === 'toggle') {
       const wl = data.watched[root] || []
       if (isW) {
@@ -321,6 +324,15 @@ export function LibraryPage() {
             onConfirm: async () => { await useLibraryStore.getState().batchClear(Array.from(selectedPaths)); setSelectMode(false); setSelectedPaths(new Set()); doScan() }
           })} className="px-2 py-1 text-xs rounded text-white"
             style={{ backgroundColor: 'var(--kq-btn-toggle-a)' }}>🗑 清记录</button>
+          <button onClick={async () => {
+            const paths = Array.from(selectedPaths)
+            let deleted = 0
+            for (const p of paths) {
+              if (await window.api.deleteFile(p)) deleted++
+            }
+            if (deleted > 0) { setSelectMode(false); setSelectedPaths(new Set()); doScan() }
+          }} className="px-2 py-1 text-xs rounded text-white"
+            style={{ backgroundColor: '#aa3a3a' }}>❌ 删除</button>
         </div>
       )}
     </div>

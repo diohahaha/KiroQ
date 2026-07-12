@@ -114,7 +114,7 @@ export function AnimeGrid(p: AnimeGridProps) {
         </div>
       )
     }
-    // 视频卡片左对齐，一眼区分
+    // 视频卡片左对齐
     const vp = joinPath(p.rootPath, item.name)
     return (
       <RootVideoCard
@@ -125,6 +125,9 @@ export function AnimeGrid(p: AnimeGridProps) {
         onOpen={() => p.onVideoOpen(item.name)}
         onContextMenu={e => p.onVideoContextMenu(e, item.name)}
         size={cardSize}
+        selectMode={p.selectMode}
+        isSelected={p.selectedPaths?.has(vp)}
+        onSelectToggle={p.onSelectToggle ? () => p.onSelectToggle!(vp) : undefined}
       />
     )
     // eslint-disable-next-line react-hooks/exhaustive-deps

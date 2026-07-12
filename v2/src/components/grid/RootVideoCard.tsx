@@ -13,10 +13,18 @@ interface RootVideoCardProps {
   onOpen: () => void
   onContextMenu: (e: React.MouseEvent) => void
   size?: number
+  selectMode?: boolean
+  isSelected?: boolean
+  onSelectToggle?: () => void
 }
 
 const MAX_THUMB_RETRIES = 6
 const THUMB_RETRY_DELAY_MS = 800
+
+// 虚拟滚动会让卡片频繁挂载卸载，每次挂载都重新走 IPC 取 hash 会导致
+// 短暂显示占位符（🎬）再替换成图片——肉眼看到就是"闪"。
+// 用模块级缓存把 hash 记下来，重新挂载时直接渲染，不用等 IPC。
+const thumbCache = new Map<string, string | null>()
 
 /** 视频卡片的实际高度（横版封面 + 两行标题空间），给 AnimeGrid 算视频行行高用，
  * 保持唯一数据来源，不用在两个文件里各写一份数字容易对不上。 */
@@ -28,6 +36,7 @@ export function getRootVideoCardHeight(size: number): number {
 
 export function RootVideoCard({
   fileName, filePath, isWatched, durationSec, onOpen, onContextMenu, size = 160,
+  selectMode, isSelected, onSelectToggle,
 }: RootVideoCardProps) {
   // 封面用横版 16:9——视频本身就是横的，套用番剧海报的竖版比例会显得很怪。
   // 卡片外框（圆角/边框/标题居中）仍然和 AnimeCard 一致，只是封面区域矮一些，
@@ -36,16 +45,23 @@ export function RootVideoCard({
   const coverH = Math.round(coverW * (9 / 16))
   const cardMinHeight = getRootVideoCardHeight(size)
   const dur = formatDuration(durationSec)
-  const [thumbHash, setThumbHash] = useState<string | null>(null)
+  const cached = thumbCache.get(filePath)
+  const [thumbHash, setThumbHash] = useState<string | null>(cached ?? null)
   const [thumbFailed, setThumbFailed] = useState(false)
   const [attempt, setAttempt] = useState(0)
   const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
+    // 缓存命中：直接渲染，不闪
+    if (cached !== undefined) {
+      setThumbHash(cached)
+      return
+    }
     let cancelled = false
     setThumbFailed(false)
     setAttempt(0)
     window.api.getThumbnail(filePath, Math.round(coverW * 2), Math.round(coverH * 2)).then(hash => {
+      thumbCache.set(filePath, hash ?? null)
       if (!cancelled) setThumbHash(hash)
     })
     return () => {
@@ -74,14 +90,28 @@ export function RootVideoCard({
       className="relative rounded-lg border cursor-pointer transition-colors duration-150 flex flex-col select-none"
       style={{
         backgroundColor: 'var(--kq-bg-card)',
-        borderColor: 'var(--kq-border)',
+        borderColor: isSelected ? 'var(--kq-accent)' : 'var(--kq-border)',
+        borderWidth: isSelected ? 2 : 1,
         width: size, minHeight: cardMinHeight,
       }}
-      onDoubleClick={onOpen}
+      onClick={() => { if (selectMode && onSelectToggle) onSelectToggle() }}
+      onDoubleClick={() => { if (!selectMode) onOpen() }}
       onContextMenu={onContextMenu}
-      onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--kq-border-hover)' }}
-      onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--kq-border)' }}
+      onMouseEnter={e => { if (!isSelected) e.currentTarget.style.borderColor = 'var(--kq-border-hover)' }}
+      onMouseLeave={e => { if (!isSelected) e.currentTarget.style.borderColor = 'var(--kq-border)' }}
     >
+      {/* 选择框（多选模式） */}
+      {selectMode && (
+        <div
+          className="absolute top-1 left-1 w-[22px] h-[22px] rounded flex items-center justify-center text-xs font-bold z-10"
+          style={{
+            backgroundColor: isSelected ? 'var(--kq-accent)' : 'var(--kq-cb-unchecked)',
+            color: isSelected ? '#fff' : 'transparent',
+          }}
+        >
+          {isSelected ? '✓' : ''}
+        </div>
+      )}
       {/* 封面 */}
       <div className="relative mx-[3px] mt-[6px] rounded-lg overflow-hidden" style={{ width: coverW, height: coverH, backgroundColor: 'var(--kq-bg-nav)' }}>
         {thumbHash && !thumbFailed ? (

@@ -104,27 +104,25 @@ export function App() {
         onSwitchLibraryMode={handleSwitchLibraryMode}
       />
 
-      <PageTransition page={{ type: isRoot ? 'library' : 'detail', videoId: current?.path }}>
-        {isRoot ? (
-          // 首页：视频库/图片库两个组件都保持挂载，只切 CSS 显隐，不再整个卸载
-          // 重挂载——之前每次切库模式都要重新走一遍 LibraryPage 的挂载流程，
-          // VirtualGrid 靠 ResizeObserver 量尺寸，第一帧量出来是 0×0 什么都不渲染，
-          // 等测量完成才刷出卡片，这个空白帧就是"闪一下"的来源。保持挂载后
-          // 两边各自的滚动位置、VirtualGrid 测量结果都还在，切换是纯 CSS 瞬切。
-          <>
-            <div style={{ display: libraryMode === 'video' ? 'contents' : 'none' }}>
-              <LibraryPage />
-            </div>
-            <div style={{ display: libraryMode === 'image' ? 'contents' : 'none' }}>
-              <ImageLibraryPage />
-            </div>
-          </>
-        ) : (
-          libraryMode === 'video'
-            ? <DetailPage folderPath={current!.path} />
-            : <ImageDetailPage folderPath={current!.path} />
-        )}
-      </PageTransition>
+      <div className="flex-1 flex flex-col overflow-hidden relative">
+        {/* 首页：视频库/图片库常驻挂载，只切 CSS 显隐，完全不进 PageTransition
+           那套 AnimatePresence，进/退详情页都不会连累它重新挂载 */}
+        <div style={{ display: isRoot && libraryMode === 'video' ? 'contents' : 'none' }}>
+          <LibraryPage />
+        </div>
+        <div style={{ display: isRoot && libraryMode === 'image' ? 'contents' : 'none' }}>
+          <ImageLibraryPage />
+        </div>
+
+        {/* 详情页：单独走滑入滑出转场，只在“有没有详情页”这件事上触发动画 */}
+        <PageTransition show={!isRoot} page={{ type: 'detail', videoId: current?.path }}>
+          {libraryMode === 'video' ? (
+            !isRoot && <DetailPage folderPath={current!.path} />
+          ) : (
+            !isRoot && <ImageDetailPage folderPath={current!.path} />
+          )}
+        </PageTransition>
+      </div>
 
       <SettingsDialog open={activeModal === 'settings'} onClose={closeModal} />
       <EditDialog open={activeModal === 'edit'} folderPath={editFolderPath} meta={editMeta}
