@@ -29,7 +29,7 @@ let mainWindow: BrowserWindow | null = null
 
 function createWindow(): void {
   const iconPath = app.isPackaged
-    ? path.join(process.resourcesPath, '..', 'build', 'icon.ico')
+    ? path.join(process.resourcesPath, 'build', 'icon.ico')
     : path.join(process.cwd(), 'build', 'icon.ico')
 
   // 恢复上一次窗口位置/大小

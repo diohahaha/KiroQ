@@ -8,6 +8,10 @@ files:
 extraResources:
   - from: bin
     to: ffmpeg
+  - from: bin
+    to: bin
+  - from: build/icon.ico
+    to: build/icon.ico
 win:
   target: nsis
   icon: build/icon.ico
