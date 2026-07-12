@@ -62,3 +62,19 @@ export function scanLibraryRoot(root: string): { subdirs: string[]; videos: stri
   }
   return result
 }
+
+/**
+ * 递归统计文件夹（含所有子文件夹）内的视频总数。
+ * 用于首页进度条：如果只扫一层，按季/按话分子文件夹存放的番剧会被误判为
+ * "总集数=0"，导致进度条因为 totalVideos>0 这个条件不成立而不显示。
+ * maxDepth 防止极端目录结构（或软链接环）导致递归过深/卡死。
+ */
+export function countVideosRecursive(folder: string, maxDepth = 6): number {
+  if (maxDepth <= 0) return 0
+  const { subdirs, videos } = scanFolder(folder)
+  let total = videos.length
+  for (const d of subdirs) {
+    total += countVideosRecursive(path.join(folder, d), maxDepth - 1)
+  }
+  return total
+}

@@ -3,7 +3,10 @@
  */
 import { contextBridge, ipcRenderer } from 'electron'
 import { IPC } from '../shared/types'
-import type { AppData, AppSettings, AnimeFolder, ScanResult, ContextMenuItem } from '../shared/types'
+import type {
+  AppData, AppSettings, AnimeFolder, ScanResult, ContextMenuItem,
+  ImageAppData, ImageFolder, ImageScanResult, ImageTagDef,
+} from '../shared/types'
 
 const api = {
   // Data
@@ -33,6 +36,8 @@ const api = {
   // Library（支持扫描任意目录）
   scanFolder: (folder: string): Promise<ScanResult> =>
     ipcRenderer.invoke(IPC.LIBRARY_SCAN, folder),
+  countVideos: (folderPath: string): Promise<number> =>
+    ipcRenderer.invoke(IPC.LIBRARY_COUNT_VIDEOS, folderPath),
   getDuration: (filePath: string): Promise<any> =>
     ipcRenderer.invoke(IPC.LIBRARY_GET_DURATION, filePath),
   getThumbnail: (videoPath: string, w: number, h: number): Promise<string | null> =>
@@ -50,6 +55,10 @@ const api = {
     ipcRenderer.invoke(IPC.SETTINGS_PICK_PLAYER),
   pickImage: (): Promise<string | null> =>
     ipcRenderer.invoke(IPC.SETTINGS_PICK_IMAGE),
+  pickImageViewer: (): Promise<string | null> =>
+    ipcRenderer.invoke(IPC.SETTINGS_PICK_IMAGE_VIEWER),
+  pickEbookViewer: (): Promise<string | null> =>
+    ipcRenderer.invoke(IPC.SETTINGS_PICK_EBOOK_VIEWER),
 
   // Player
   launchPlayer: (videoPath: string, folderPath: string): Promise<boolean> =>
@@ -75,7 +84,6 @@ const api = {
   genericFetchJson: (url: string): Promise<any> =>
     ipcRenderer.invoke('generic:fetchJson', url),
 
-  // Context Menu
   // Shell
   openFolder: (filePath: string): Promise<void> =>
     ipcRenderer.invoke(IPC.SHELL_OPEN_FOLDER, filePath),
@@ -85,6 +93,58 @@ const api = {
   // Context Menu
   showContextMenu: (items: ContextMenuItem[]): Promise<string | null> =>
     ipcRenderer.invoke(IPC.WINDOW_CONTEXT_MENU, items),
+
+  // ── 图片库 ──
+  imageGetData: (): Promise<ImageAppData> =>
+    ipcRenderer.invoke(IPC.IMAGE_DATA_GET),
+  imageSetRoot: (root: string): Promise<ImageAppData> =>
+    ipcRenderer.invoke(IPC.IMAGE_DATA_SET_ROOT, root),
+  imageUpdateMeta: (folderPath: string, partial: Partial<ImageFolder>): Promise<void> =>
+    ipcRenderer.invoke(IPC.IMAGE_DATA_UPDATE_META, folderPath, partial),
+  imageTogglePin: (folderPath: string): Promise<boolean> =>
+    ipcRenderer.invoke(IPC.IMAGE_DATA_TOGGLE_PIN, folderPath),
+  imageToggleHide: (folderPath: string): Promise<boolean> =>
+    ipcRenderer.invoke(IPC.IMAGE_DATA_TOGGLE_HIDE, folderPath),
+  imageBatchTogglePin: (paths: string[]): Promise<void> =>
+    ipcRenderer.invoke(IPC.IMAGE_DATA_TOGGLE_ALL_PIN, paths),
+  imageBatchToggleHide: (paths: string[]): Promise<void> =>
+    ipcRenderer.invoke(IPC.IMAGE_DATA_TOGGLE_ALL_HIDE, paths),
+  imageBatchDelete: (paths: string[]): Promise<string[]> =>
+    ipcRenderer.invoke(IPC.IMAGE_DATA_BATCH_DELETE, paths),
+  imageSetFolderTags: (folderPath: string, tags: string[]): Promise<void> =>
+    ipcRenderer.invoke(IPC.IMAGE_DATA_SET_FOLDER_TAGS, folderPath, tags),
+  imageSetFileTags: (filePath: string, tags: string[]): Promise<void> =>
+    ipcRenderer.invoke(IPC.IMAGE_DATA_SET_FILE_TAGS, filePath, tags),
+  imageToggleFolderWatched: (folderPath: string): Promise<boolean> =>
+    ipcRenderer.invoke(IPC.IMAGE_DATA_TOGGLE_FOLDER_WATCHED, folderPath),
+  imageToggleFileWatched: (filePath: string, folderPath: string): Promise<boolean> =>
+    ipcRenderer.invoke(IPC.IMAGE_DATA_TOGGLE_FILE_WATCHED, filePath, folderPath),
+  imageSaveTagDefs: (defs: ImageTagDef[]): Promise<void> =>
+    ipcRenderer.invoke(IPC.IMAGE_DATA_SAVE_TAG_DEFS, defs),
+  imageSaveFilter: (partial: Partial<Pick<ImageAppData, 'autoFilterEmpty' | 'filterKeywords' | 'typeFilter'>>): Promise<void> =>
+    ipcRenderer.invoke(IPC.IMAGE_DATA_SAVE_FILTER, partial),
+  imageSetSort: (sortKey: ImageAppData['sortKey'], sortDesc: boolean): Promise<void> =>
+    ipcRenderer.invoke('imageData:setSort', sortKey, sortDesc),
+  imageScanRoot: (root: string): Promise<ImageScanResult> =>
+    ipcRenderer.invoke(IPC.IMAGE_LIBRARY_SCAN, root),
+  imageScanFolder: (folderPath: string): Promise<ImageScanResult> =>
+    ipcRenderer.invoke('imageLibrary:scanFolder', folderPath),
+  imageGetCover: (filePath: string): Promise<string | null> =>
+    ipcRenderer.invoke(IPC.IMAGE_LIBRARY_GET_COVER, filePath),
+  imageGetFolderCover: (folderPath: string): Promise<string | null> =>
+    ipcRenderer.invoke('imageLibrary:getFolderCover', folderPath),
+  imageOpenFile: (filePath: string, viewerPath: string | null): Promise<boolean> =>
+    ipcRenderer.invoke(IPC.IMAGE_LIBRARY_OPEN_FILE, filePath, viewerPath),
+  imageOpenErrorLog: (): Promise<void> =>
+    ipcRenderer.invoke(IPC.IMAGE_LIBRARY_OPEN_ERROR_LOG),
+  imageClearThumbnailCache: (): Promise<{ deleted: number }> =>
+    ipcRenderer.invoke('imageLibrary:clearThumbnailCache'),
+  imageGetOversizedFiles: (folderPath: string): Promise<string[]> =>
+    ipcRenderer.invoke('imageLibrary:getOversizedFiles', folderPath),
+  imageRegenerateCover: (filePath: string): Promise<string | null> =>
+    ipcRenderer.invoke('imageLibrary:regenerateCover', filePath),
+  imageRegenerateFolderCover: (folderPath: string): Promise<string | null> =>
+    ipcRenderer.invoke('imageLibrary:regenerateFolderCover', folderPath),
 }
 
 contextBridge.exposeInMainWorld('api', api)

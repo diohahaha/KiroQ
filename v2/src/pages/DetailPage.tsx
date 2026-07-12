@@ -3,14 +3,14 @@
  */
 import { useState, useCallback, useEffect, useMemo } from 'react'
 import { List, Grid3X3, Play, ExternalLink } from 'lucide-react'
-import { AnimeGrid } from '@/components/grid/AnimeGrid'
+import { AnimeCard } from '@/components/grid/AnimeCard'
 import { useLibraryStore } from '@/state/libraryStore'
 import { useNavigationStore } from '@/state/navigationStore'
 import { useUiStore } from '@/state/uiStore'
 import { useSettingsStore } from '@/state/settingsStore'
 import { useContextMenu } from '@/hooks/useContextMenu'
 import { np, joinPath } from '@/utils/path'
-import { cleanSearchKeyword } from '@/utils/cleanName'
+import { cleanSearchKeyword, cleanDisplayName } from '@/utils/cleanName'
 
 interface Props { folderPath: string }
 
@@ -45,6 +45,19 @@ export function DetailPage({ folderPath }: Props) {
   const [sel, setSel] = useState<Set<string>>(new Set())
   const [durations, setDurations] = useState<Record<string, number>>({})
   const [thumbHashes, setThumbHashes] = useState<Record<string, string>>({})
+  // 缩略图第一次加载失败时的重试计数 / 最终放弃标记——ffmpeg 后台截帧是异步的，
+  // 第一次请求时文件经常还没生成完（404），隔一小段时间自动重试几次就能刷出来，
+  // 不用再重新进文件夹
+  const [thumbRetry, setThumbRetry] = useState<Record<string, number>>({})
+  const [thumbFailed, setThumbFailed] = useState<Record<string, boolean>>({})
+  const handleThumbError = useCallback((key: string) => {
+    setThumbRetry(prev => {
+      const n = prev[key] || 0
+      if (n >= 6) { setThumbFailed(f => ({ ...f, [key]: true })); return prev }
+      setTimeout(() => setThumbRetry(p => ({ ...p, [key]: (p[key] || 0) + 1 })), 800)
+      return prev
+    })
+  }, [])
 
   const doScan = useCallback(async () => {
     const r = await window.api.scanFolder(fp)
@@ -158,10 +171,15 @@ export function DetailPage({ folderPath }: Props) {
     const r = await show([
       { id: 'play', label: '▶ 打开' },
       { id: 'toggle', label: isW ? '✗ 标记未看' : '✓ 标记已看' },
-      { id: 'sep', label: '', type: 'separator' },
+      { id: 'sep1', label: '', type: 'separator' },
+      { id: 'open-folder', label: '📂 打开文件位置' },
+      { id: 'delete', label: '❌ 删除文件' },
+      { id: 'sep2', label: '', type: 'separator' },
       { id: 'selMode', label: '☑ 多选' },
     ])
     if (r === 'play') { window.api.launchPlayer(vp, fp); await markWatched(vp, fp) }
+    if (r === 'open-folder') window.api.openFolder(vp)
+    if (r === 'delete') { if (await window.api.deleteFile(vp)) doScan() }
     if (r === 'toggle') {
       if (isW) {
         // 标记未看：从 watched 列表移除
@@ -173,7 +191,7 @@ export function DetailPage({ folderPath }: Props) {
       refresh()
     }
     if (r === 'selMode') setSelectMode(true)
-  }, [selectMode, show, watchedList, fp, markWatched, clearWatched, refresh])
+  }, [selectMode, show, watchedList, fp, markWatched, clearWatched, refresh, doScan])
 
   // 文件夹右键
   const folderCtx = useCallback(async (e: React.MouseEvent, fPath: string, fName: string) => {
@@ -337,12 +355,13 @@ export function DetailPage({ folderPath }: Props) {
                         </div>
                       )}
                       <div className="w-full h-[120px] relative overflow-hidden" style={{ backgroundColor: 'var(--kq-bg-nav)' }}>
-                        {thumbHashes[`${vp}|360|240`] ? (
-                          <img src={`kiroq://thumbnail/${thumbHashes[`${vp}|360|240`]}`} alt={v}
+                        {thumbHashes[`${vp}|360|240`] && !thumbFailed[`${vp}|360|240`] ? (
+                          <img key={thumbRetry[`${vp}|360|240`] || 0}
+                            src={`kiroq://thumbnail/${thumbHashes[`${vp}|360|240`]}`} alt={v}
                             className="w-full h-full object-cover"
-                            onError={e => { (e.target as HTMLImageElement).style.display = 'none' }} />
+                            onError={() => handleThumbError(`${vp}|360|240`)} />
                         ) : null}
-                        {!thumbHashes[`${vp}|360|240`] && (
+                        {(!thumbHashes[`${vp}|360|240`] || thumbFailed[`${vp}|360|240`]) && (
                           <div className="absolute inset-0 flex items-center justify-center text-3xl">🎞️</div>
                         )}
                         {dur > 0 && <span className="absolute bottom-1 right-1 px-1 text-[10px] rounded" style={{ backgroundColor: '#111', color: '#eee' }}>{fmtDur(dur)}</span>}
@@ -363,13 +382,27 @@ export function DetailPage({ folderPath }: Props) {
             {videos.length > 0 && <hr style={{ borderColor: 'var(--kq-sep-color)' }} />}
             <div>
               <span className="text-sm font-bold" style={{ color: 'var(--kq-text-dim)' }}>📂 子文件夹</span>
-              <div className="mt-2">
-                <AnimeGrid
-                  rootPath={fp} dirNames={subdirs} data={data}
-                  videoCounts={{}}
-                  cleanDisplay onEnter={(fPath, fName) => push({ path: fPath, name: fName })}
-                  onContextMenu={(e, fPath, fName) => folderCtx(e, fPath, fName)}
-                />
+              <div className="mt-2 flex flex-wrap gap-3">
+                {subdirs.map(d => {
+                  const sfp = joinPath(fp, d)
+                  const smeta = data.folderMeta[sfp] || null
+                  const swl = data.watched[sfp] || []
+                  return (
+                    <AnimeCard
+                      key={sfp}
+                      folderPath={sfp}
+                      displayName={smeta?.name || cleanDisplayName(d)}
+                      meta={smeta}
+                      isPinned={data.pinned.includes(sfp)}
+                      isHidden={data.hidden.includes(sfp)}
+                      watchedCount={swl.length}
+                      totalVideos={0}
+                      onEnter={() => push({ path: sfp, name: smeta?.name || d })}
+                      onContextMenu={e => folderCtx(e, sfp, smeta?.name || d)}
+                      enableAnimation={false}
+                    />
+                  )
+                })}
               </div>
             </div>
           </>

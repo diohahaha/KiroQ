@@ -11,9 +11,10 @@ import {
   getDuration, setDuration, setWatched,
   batchTogglePin, batchToggleHide, batchClearWatched, batchSetStatus,
 } from '../services/store'
-import { scanLibraryRoot } from '../services/scanner'
+import { scanLibraryRoot, countVideosRecursive } from '../services/scanner'
 import { probeVideo } from '../services/ffprobe'
 import { generateThumbnail, thumbnailExists, thumbnailPath } from '../services/thumbnail'
+import { scanQueue } from '../services/taskQueue'
 
 export function registerLibraryIpc(mainWindow: BrowserWindow): void {
   ipcMain.handle(IPC.DATA_GET, async (): Promise<AppData> => {
@@ -67,6 +68,18 @@ export function registerLibraryIpc(mainWindow: BrowserWindow): void {
 
   ipcMain.handle(IPC.LIBRARY_SCAN, async (_e, root: string) => {
     return scanLibraryRoot(root)
+  })
+
+  // 递归统计某个文件夹（含所有子文件夹）内的视频总数，用于首页进度条。
+  // 之前 LibraryPage 用的是浅层 scanFolder().videos.length，按季/按话分子文件夹
+  // 的番剧会被算成总集数=0，导致进度条条件 totalVideos>0 不成立、不显示。
+  //
+  // 走 scanQueue 限流：库比较大、文件夹层级较深时，首页会对几十上百个文件夹
+  // 同时发起递归统计，每个都是一串同步 fs.readdirSync，全部一拥而上会把主进程
+  // 事件循环连续占满，表现为"卡片全部消失、界面无响应"（原理和图片库压缩包
+  // 解压卡死完全一样，只是 readdir 比解压便宜，量级够大才会触发）。
+  ipcMain.handle(IPC.LIBRARY_COUNT_VIDEOS, async (_e, folderPath: string) => {
+    return scanQueue.run(() => countVideosRecursive(folderPath))
   })
 
   ipcMain.handle(IPC.LIBRARY_GET_DURATION, async (_e, filePath: string) => {

@@ -13,9 +13,6 @@ import type { SortKey } from '@shared/types'
 import { List, Grid3X3 } from 'lucide-react'
 import { np, joinPath } from '@/utils/path'
 
-// 记住首页滚动位置（跨导航保留）
-let savedScrollTop = 0
-
 export function LibraryPage() {
   const data = useLibraryStore(s => s.data)
   const refresh = useLibraryStore(s => s.refresh)
@@ -34,11 +31,13 @@ export function LibraryPage() {
   const [videos, setVideos] = useState<string[]>([])
   const [videoCounts, setVideoCounts] = useState<Record<string, number>>({})
   const [emptyFolders, setEmptyFolders] = useState<Set<string>>(new Set())
+  const [rootDurations, setRootDurations] = useState<Record<string, number>>({})
   const [cleanDisplay, setCleanDisplay] = useState(true)
   const [selectMode, setSelectMode] = useState(false)
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set())
-  const [rootVideoView, setRootVideoView] = useState<'list' | 'grid'>('list')
-  const scrollRef = useRef<HTMLDivElement>(null)
+  // 文件夹和根目录视频现在合并进同一个虚拟列表了，list/grid 是统一的一个开关
+  // （以前 rootVideoView 只管根目录视频那一小块，文件夹宫格没有这个概念）
+  const [libraryViewMode, setLibraryViewMode] = useState<'list' | 'grid'>('grid')
 
   const root = np(data.root)
 
@@ -52,26 +51,34 @@ export function LibraryPage() {
     const counts: Record<string, number> = {}
     const empties = new Set<string>()
     await Promise.all(result.subdirs.map(async (d) => {
+      const fp = joinPath(root, d)
       try {
-        const fp = joinPath(root, d)
         const r = await (window.api as any).scanFolder(fp)
-        if (r) {
-          counts[fp] = r.videos.length
-          if (r.videos.length === 0 && r.subdirs.length === 0) empties.add(fp)
-        }
-      } catch { counts[joinPath(root, d)] = 0 }
+        if (r && r.videos.length === 0 && r.subdirs.length === 0) empties.add(fp)
+      } catch { /* ignore，空文件夹判定失败不影响视频计数 */ }
+      try {
+        // 递归统计（含子文件夹），不能用浅层 scanFolder().videos.length —— 按季/按话
+        // 分子文件夹存放的番剧会被浅层扫描算成 0 集，导致卡片进度条因为
+        // totalVideos>0 这个条件不成立而不显示。
+        counts[fp] = await window.api.countVideos(fp)
+      } catch { counts[fp] = 0 }
     }))
     setVideoCounts(counts)
     setEmptyFolders(empties)
-    // 数据加载完等一帧再恢复滚动位置
-    setTimeout(() => {
-      if (scrollRef.current && savedScrollTop > 0) {
-        scrollRef.current.scrollTop = savedScrollTop
-      }
-    }, 50)
   }, [root, scanFolder])
 
   useEffect(() => { if (root) doScan() }, [root, doScan])
+
+  // 后台扫描根目录视频时长
+  useEffect(() => {
+    for (const v of videos) {
+      const vp = joinPath(root, v)
+      if (rootDurations[vp] != null || data.videoDurations[vp] != null) continue
+      window.api.getDuration(vp).then((r: any) => {
+        if (r?.durationSec > 0) setRootDurations(prev => ({ ...prev, [vp]: r.durationSec }))
+      }).catch(() => {})
+    }
+  }, [videos, root])
 
   const handleEnter = useCallback((folderPath: string, name: string) => {
     push({ path: np(folderPath), name })
@@ -202,6 +209,14 @@ export function LibraryPage() {
   const totalWatching = subdirs.filter(d => data.folderMeta[joinPath(root, d)]?.status === 'watching').length
   const totalDone = subdirs.filter(d => data.folderMeta[joinPath(root, d)]?.status === 'done').length
 
+  // AnimeGrid 内部直接读 data.videoDurations[视频路径]，但根目录散装视频的时长
+  // 是本地 rootDurations 这个临时状态存的（避免为了拿个时长就要刷新整个 store），
+  // 传给 AnimeGrid 之前先合并一份，让它读同一个字段就能拿到两边的数据
+  const mergedData = useMemo(() => ({
+    ...data,
+    videoDurations: { ...data.videoDurations, ...rootDurations },
+  }), [data, rootDurations])
+
   if (!root) {
     return (
       <div className="flex-1 flex items-center justify-center">
@@ -224,6 +239,11 @@ export function LibraryPage() {
         <span>▶ 已看 {totalWatched} 集</span>
         {fmtTotal && <span>⏱ {fmtTotal}</span>}
         <div className="flex-1" />
+        <button onClick={() => setLibraryViewMode(v => v === 'list' ? 'grid' : 'list')}
+          className="p-1.5 rounded" style={{ color: 'var(--kq-text-primary)' }}
+          title={libraryViewMode === 'list' ? '切换到宫格' : '切换到列表'}>
+          {libraryViewMode === 'list' ? <Grid3X3 size={16} /> : <List size={16} />}
+        </button>
         <button onClick={() => { setCleanDisplay(!cleanDisplay) }}
           className="px-2 py-0.5 text-xs rounded text-white"
           style={{ backgroundColor: cleanDisplay ? 'var(--kq-btn-toggle-b)' : 'var(--kq-btn-toggle-a)' }}>
@@ -246,17 +266,21 @@ export function LibraryPage() {
         )}
       </div>
 
-      {/* 宫格 */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto py-3"
-        onScroll={e => { savedScrollTop = (e.target as HTMLDivElement).scrollTop }}>
+      {/* 宫格 —— AnimeGrid 内部是虚拟滚动（react-window），文件夹 + 根目录
+          散装视频合并进同一个连续列表，自己管理滚动和滚动位置记忆 */}
+      <div className="flex-1 min-h-0 relative">
         <AnimeGrid
           rootPath={root}
           dirNames={sortedDirs}
-          data={data}
+          videoNames={videos}
+          data={mergedData}
           videoCounts={videoCounts}
           cleanDisplay={cleanDisplay}
+          viewMode={libraryViewMode}
           onEnter={handleEnter}
           onContextMenu={handleContextMenu}
+          onVideoOpen={(v) => window.api.launchPlayer(joinPath(root, v), root)}
+          onVideoContextMenu={(e, v) => handleRootVideoCtx(e, joinPath(root, v))}
           selectMode={selectMode}
           selectedPaths={selectedPaths}
           onSelectToggle={(fp) => setSelectedPaths(prev => {
@@ -265,58 +289,6 @@ export function LibraryPage() {
             return next
           })}
         />
-
-        {/* 根目录视频 */}
-        {videos.length > 0 && (
-          <div className="mt-4 px-4">
-            <div className="flex items-center gap-2 mb-2">
-              <span className="text-xs font-bold" style={{ color: 'var(--kq-text-dim)' }}>📺 根目录视频</span>
-              <button onClick={() => setRootVideoView(v => v === 'list' ? 'grid' : 'list')}
-                className="p-1 rounded" style={{ color: 'var(--kq-text-primary)' }}>
-                {rootVideoView === 'list' ? <Grid3X3 size={16} /> : <List size={16} />}
-              </button>
-            </div>
-            {rootVideoView === 'list' ? (
-              <div className="space-y-px border rounded overflow-hidden" style={{ borderColor: 'var(--kq-border)' }}>
-                {videos.map((v, i) => {
-                  const fp = joinPath(root, v)
-                  const isW = (data.watched[root] || []).includes(fp)
-                  return (
-                    <div key={v}
-                      className="flex items-center gap-2 px-3 py-[7px] text-xs cursor-pointer select-none transition-colors"
-                      style={{
-                        backgroundColor: i % 2 === 0 ? 'var(--kq-row-even)' : 'var(--kq-row-odd)',
-                        color: isW ? 'var(--kq-watched-text)' : 'var(--kq-text-primary)',
-                      }}
-                      onMouseEnter={e => { e.currentTarget.style.backgroundColor = 'var(--kq-row-hover)' }}
-                      onMouseLeave={e => { e.currentTarget.style.backgroundColor = i % 2 === 0 ? 'var(--kq-row-even)' : 'var(--kq-row-odd)' }}
-                      onDoubleClick={() => window.api.launchPlayer(fp, root)}
-                      onContextMenu={e => handleRootVideoCtx(e, fp)}>
-                      <span style={{ color: isW ? 'transparent' : 'var(--kq-text-dim)' }}>●</span>
-                      <span className="flex-1 truncate">{v}</span>
-                      {isW && <span className="text-[10px] shrink-0" style={{ color: 'var(--kq-watched-fg)' }}>✓ 已看</span>}
-                    </div>
-                  )
-                })}
-              </div>
-            ) : (
-              <div className="grid grid-cols-[repeat(auto-fill,minmax(180px,1fr))] gap-3">
-                {videos.map(v => {
-                  const fp = joinPath(root, v)
-                  return (
-                    <div key={v} className="rounded-lg border overflow-hidden cursor-pointer"
-                      style={{ borderColor: 'var(--kq-border)', backgroundColor: 'var(--kq-bg-card)' }}
-                      onDoubleClick={() => window.api.launchPlayer(fp, root)}>
-                      <div className="w-full h-[100px] flex items-center justify-center text-3xl"
-                        style={{ backgroundColor: 'var(--kq-bg-nav)' }}>🎞️</div>
-                      <div className="p-2 text-xs truncate" style={{ color: 'var(--kq-text-primary)' }}>{v}</div>
-                    </div>
-                  )
-                })}
-              </div>
-            )}
-          </div>
-        )}
       </div>
 
       {/* 底栏 */}

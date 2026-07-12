@@ -1,127 +1,226 @@
 /**
- * 番剧宫格 — 动态间距 + 补位动画
+ * 番剧宫格 — 虚拟滚动版本，文件夹 + 根目录散装视频合并进同一个连续滚动列表。
  *
- * 设计：卡片宽度固定 160px 不变。容器宽度变化时，先算出当前宽度下
- * 用最小间距(GAP_MIN)最多能塞几张卡（列数 c），再反算这一行该用多大
- * 的 gap 才能让 c 张卡正好撑满整行宽度，最后 clamp 到 [GAP_MIN, GAP_MAX]。
- * 这样保证：① 间距永远不会小于 GAP_MIN（不会贴在一起）
- *          ② 间距被压到 GAP_MIN 附近、容器够宽时才会多塞一张卡（补位）
- *          ③ clamp 到 GAP_MAX 后会重新校验是否能再塞一张卡，避免错位
+ * 宫格模式：两个独立 VirtualGrid（文件夹大卡片 + 视频小卡片）叠在同一个
+ * overflow-y-auto 容器里，中间分隔线，一根滚动条打通。
+ * 列表模式：文件夹和视频合并成一个 VirtualList，中间分隔行。
  */
-import { useRef, useLayoutEffect, useState, useEffect } from 'react'
-import { AnimatePresence } from 'framer-motion'
+import { useCallback, useState, useRef, useMemo } from 'react'
 import { AnimeCard } from './AnimeCard'
+import { RootVideoCard, getRootVideoCardHeight } from './RootVideoCard'
+import { RootVideoRow } from './RootVideoRow'
+import { VirtualGrid } from './VirtualGrid'
+import { VirtualList } from './VirtualList'
+import { ZoomSlider } from '@/components/common/ZoomSlider'
+import { useScrollReveal } from '@/hooks/useScrollReveal'
+import { useSettingsStore } from '@/state/settingsStore'
 import type { AppData } from '@shared/types'
 import { joinPath } from '@/utils/path'
 import { cleanDisplayName } from '@/utils/cleanName'
 
-const CARD_W = 160
-const GAP_MIN = 10
-const GAP_MAX = 32
-const GAP_FALLBACK = 16 // 首帧渲染、ResizeObserver 还没跑之前的兜底值，避免贴边闪烁
-
-function calcGap(w: number): number {
-  const usable = Math.max(w, CARD_W)
-
-  // 极端情况：容器连"1 张卡 + 两侧最小间距"都塞不下，gap 退化为能塞下的最大值
-  // （理论下限，实际窗口宽度几乎不会触发，但保留以避免数学上的溢出）
-  if (usable < CARD_W + 2 * GAP_MIN) {
-    return Math.max(Math.floor((usable - CARD_W) / 2), 0)
-  }
-
-  // 1. 用最小间距，算出最多能塞下几张卡（保证至少有 GAP_MIN 的间距）
-  let c = Math.floor((usable - GAP_MIN) / (CARD_W + GAP_MIN))
-  c = Math.max(c, 1)
-
-  // 2. 反算：c 张卡 + (c+1) 个缝，正好撑满 usable 宽度时，每个缝该多大
-  let gap = Math.floor((usable - c * CARD_W) / (c + 1))
-  gap = Math.min(Math.max(gap, GAP_MIN), GAP_MAX)
-
-  // 3. 校验：clamp 到 GAP_MAX 后是否腾出了足够空间，能再多塞一张卡
-  //    （否则会出现"卡数和 gap 不匹配，flex-wrap 实际换行结果跟预期不一致"的错位）
-  while ((c + 1) * CARD_W + (c + 2) * GAP_MIN <= usable) {
-    c++
-    gap = Math.floor((usable - c * CARD_W) / (c + 1))
-    gap = Math.min(Math.max(gap, GAP_MIN), GAP_MAX)
-  }
-
-  return gap
-}
+type GridItem =
+  | { kind: 'folder'; name: string }
+  | { kind: 'video'; name: string }
 
 interface AnimeGridProps {
-  rootPath: string; dirNames: string[]; data: AppData
-  videoCounts?: Record<string, number>; cleanDisplay: boolean
+  rootPath: string
+  dirNames: string[]
+  videoNames: string[]
+  data: AppData
+  videoCounts?: Record<string, number>
+  cleanDisplay: boolean
+  viewMode: 'grid' | 'list'
   onEnter: (folderPath: string, name: string) => void
   onContextMenu: (e: React.MouseEvent, folderPath: string, displayName: string) => void
-  selectMode?: boolean; selectedPaths?: Set<string>; onSelectToggle?: (folderPath: string) => void
+  onVideoOpen: (videoName: string) => void
+  onVideoContextMenu: (e: React.MouseEvent, videoName: string) => void
+  selectMode?: boolean
+  selectedPaths?: Set<string>
+  onSelectToggle?: (path: string) => void
 }
 
 export function AnimeGrid(p: AnimeGridProps) {
-  const ref = useRef<HTMLDivElement>(null)
-  const [gap, setGap] = useState(GAP_FALLBACK)
-  const mountedRef = useRef(false)
+  const [cardSize, setCardSize] = useState(() => useSettingsStore.getState().videoLibraryCardSize)
+  const saveSizeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const scrollReveal = useScrollReveal()
 
-  const hasData = p.dirNames.length > 0
+  // 精确算文件夹 VirtualGrid 高度，让 Grid 内部无溢出 → 滚轮穿透到外层
+  const handleCardSizeChange = useCallback((v: number) => {
+    setCardSize(v)
+    if (saveSizeTimer.current) clearTimeout(saveSizeTimer.current)
+    saveSizeTimer.current = setTimeout(() => {
+      useSettingsStore.getState().save({ videoLibraryCardSize: v })
+    }, 300)
+  }, [])
 
-  // 标记已完成首次渲染（ref 变化不触发重渲染，layout 动画在下一帧自然生效）
-  useEffect(() => { mountedRef.current = true }, [])
+  // 文件夹/视频数据（必须放前面，后面的 hasFolders 等依赖它们）
+  const folderItems: GridItem[] = useMemo(() =>
+    p.dirNames.map(name => ({ kind: 'folder' as const, name })),
+    [p.dirNames])
+  const videoItems: GridItem[] = useMemo(() =>
+    p.videoNames.map(name => ({ kind: 'video' as const, name })),
+    [p.videoNames])
 
-  useLayoutEffect(() => {
-    const el = ref.current
-    if (!el) return
+  const hasFolders = folderItems.length > 0
+  const hasVideos = videoItems.length > 0
+  const folderCoverW = cardSize - 6
+  const folderCoverH = Math.round(folderCoverW * (200 / 154))
+  const folderCardHeight = folderCoverH + 70
+  const videoCardHeight = getRootVideoCardHeight(cardSize)
 
-    const apply = () => {
-      const w = el.clientWidth
-      if (w > 50) setGap(calcGap(w))
+  // 列表模式：所有 item 合并（分隔符插中间）
+  const listItems: GridItem[] = useMemo(() => {
+    const result: GridItem[] = [...folderItems]
+    if (folderItems.length > 0 && videoItems.length > 0) {
+      result.push({ kind: 'separator' })
     }
-    apply()
+    result.push(...videoItems)
+    return result
+  }, [folderItems, videoItems])
 
-    const obs = new ResizeObserver(apply)
-    obs.observe(el)
-    return () => obs.disconnect()
-  }, [hasData]) // 依赖 hasData：组件从"空状态"切换到"有数据状态"时会重新渲染出
-                // 带 ref 的真实 DOM 节点，这里重新执行一次 effect 才能正确拿到它
-                // （首次挂载若恰好是空状态，那次 ref.current 必然是 null，且依赖
-                // 数组为空的话不会再有第二次机会）
+  const itemKey = useCallback((item: GridItem) =>
+    item.kind === 'folder' ? `f:${joinPath(p.rootPath, item.name)}` : `v:${joinPath(p.rootPath, item.name)}`,
+    [p.rootPath])
 
-  if (!hasData) {
+  const rootWatchedVideos = p.data.watched[p.rootPath] || []
+
+  // ── 宫格：文件夹 + 视频，分隔符由 VirtualGrid.separatorAfter 处理 ──
+  const gridItems: GridItem[] = useMemo(() => [...folderItems, ...videoItems], [folderItems, videoItems])
+
+  const renderItemGrid = useCallback((item: GridItem) => {
+    if (item.kind === 'folder') {
+      const d = item.name
+      const fp = joinPath(p.rootPath, d)
+      const meta = p.data.folderMeta[fp] || null
+      const wl = p.data.watched[fp] || []
+      const total = p.videoCounts?.[fp] ?? 0
+      // 文件夹卡片居中
+      return (
+        <div style={{ width: '100%', display: 'flex', justifyContent: 'center' }}>
+          <AnimeCard
+            folderPath={fp}
+            displayName={meta?.name || (p.cleanDisplay ? cleanDisplayName(d) : d)}
+            meta={meta}
+            isPinned={p.data.pinned.includes(fp)}
+            isHidden={p.data.hidden.includes(fp)}
+            watchedCount={wl.length} totalVideos={total}
+            onEnter={() => p.onEnter(fp, meta?.name || d)}
+            onContextMenu={e => p.onContextMenu(e, fp, meta?.name || d)}
+            selectMode={p.selectMode} isSelected={p.selectedPaths?.has(fp)}
+            onSelectToggle={p.onSelectToggle ? () => p.onSelectToggle!(fp) : undefined}
+            enableAnimation={false}
+            size={cardSize}
+          />
+        </div>
+      )
+    }
+    // 视频卡片左对齐，一眼区分
+    const vp = joinPath(p.rootPath, item.name)
+    return (
+      <RootVideoCard
+        fileName={item.name}
+        filePath={vp}
+        isWatched={rootWatchedVideos.includes(vp)}
+        durationSec={p.data.videoDurations[vp]}
+        onOpen={() => p.onVideoOpen(item.name)}
+        onContextMenu={e => p.onVideoContextMenu(e, item.name)}
+        size={cardSize}
+      />
+    )
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [p, cardSize, rootWatchedVideos])
+
+  // ── 列表 ──
+  const renderItemList = useCallback((item: GridItem, i: number) => {
+    if (item.kind === 'separator') {
+      return (
+        <div className="flex items-center px-3 py-1.5" style={{ backgroundColor: 'var(--kq-bg-toolbar)' }}>
+          <span className="text-[11px] font-medium" style={{ color: 'var(--kq-text-dim)' }}>
+            ── 📺 根目录视频 ──
+          </span>
+        </div>
+      )
+    }
+    if (item.kind === 'folder') {
+      const d = item.name
+      const fp = joinPath(p.rootPath, d)
+      const meta = p.data.folderMeta[fp] || null
+      return (
+        <div
+          className="flex items-center gap-3 px-3 py-2 rounded cursor-pointer select-none"
+          style={{ backgroundColor: i % 2 === 0 ? 'var(--kq-row-even)' : 'var(--kq-row-odd)' }}
+          onClick={() => { if (p.selectMode && p.onSelectToggle) p.onSelectToggle(fp); else p.onEnter(fp, meta?.name || d) }}
+          onContextMenu={e => p.onContextMenu(e, fp, meta?.name || d)}
+          onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'var(--kq-row-hover)')}
+          onMouseLeave={e => (e.currentTarget.style.backgroundColor = i % 2 === 0 ? 'var(--kq-row-even)' : 'var(--kq-row-odd)')}
+        >
+          {p.selectMode ? (
+            <div className="w-[18px] h-[18px] rounded flex items-center justify-center text-[10px] font-bold shrink-0"
+              style={{ backgroundColor: p.selectedPaths?.has(fp) ? 'var(--kq-accent)' : 'var(--kq-cb-unchecked)', color: p.selectedPaths?.has(fp) ? '#fff' : 'transparent' }}>
+              {p.selectedPaths?.has(fp) ? '✓' : ''}
+            </div>
+          ) : <span className="text-sm">📁</span>}
+          <span className="flex-1 text-xs truncate" style={{ color: 'var(--kq-text-primary)' }}>
+            {meta?.name || (p.cleanDisplay ? cleanDisplayName(d) : d)}
+          </span>
+        </div>
+      )
+    }
+    const vp = joinPath(p.rootPath, item.name)
+    return (
+      <RootVideoRow
+        fileName={item.name}
+        filePath={vp}
+        isWatched={rootWatchedVideos.includes(vp)}
+        durationSec={p.data.videoDurations[vp]}
+        onOpen={() => p.onVideoOpen(item.name)}
+        onContextMenu={e => p.onVideoContextMenu(e, item.name)}
+        even={i % 2 === 0}
+      />
+    )
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [p, rootWatchedVideos])
+
+  if (!hasFolders && !hasVideos) {
     return <div className="flex justify-center py-10 text-sm" style={{ color: 'var(--kq-empty-text)' }}>这里还没有番剧</div>
   }
 
+  // ── 宫格模式：一个 VirtualGrid 打通文件夹 + 视频，分隔符占一整行 ──
+  if (p.viewMode === 'grid') {
+    return (
+      <div className="relative w-full h-full" onWheel={scrollReveal.onWheel}>
+        <VirtualGrid
+          items={gridItems}
+          itemKey={itemKey}
+          cardWidth={cardSize}
+          cardHeight={hasFolders ? folderCardHeight : videoCardHeight}
+          secondaryCardHeight={hasFolders && hasVideos ? videoCardHeight : undefined}
+          renderItem={renderItemGrid}
+          scrollKey={`video-library:${p.rootPath}`}
+          separatorAfter={hasFolders && hasVideos ? folderItems.length : undefined}
+        />
+
+        <ZoomSlider
+          value={cardSize} min={110} max={240} step={10}
+          onChange={handleCardSizeChange}
+          visible={scrollReveal.visible}
+          onMouseEnter={scrollReveal.onMouseEnter}
+          onMouseLeave={scrollReveal.onMouseLeave}
+        />
+      </div>
+    )
+  }
+
+  // 列表模式
   return (
-    <div
-      ref={ref}
-      className="w-full flex flex-wrap"
-      style={{ gap, padding: `8px ${gap}px`, transition: 'gap 0.2s ease-out', willChange: 'gap' } as React.CSSProperties}
-    >
-      {/* key={p.rootPath}：切换到不同文件夹时 rootPath 变化，React 把整个
-          AnimatePresence 当作全新挂载，直接显示新内容，不会把"换了一批
-          完全不同的卡片"误判成"这批卡片全部入场"而播放飞入动画。
-          同一文件夹内部增删/置顶卡片时 rootPath 不变，key 不变，
-          补位动画照常生效。 */}
-      <AnimatePresence mode="popLayout" key={p.rootPath}>
-        {p.dirNames.map(d => {
-          const fp = joinPath(p.rootPath, d)
-          const meta = p.data.folderMeta[fp] || null
-          const wl = p.data.watched[fp] || []
-          const total = p.videoCounts?.[fp] ?? 0
-          return (
-            <AnimeCard
-              key={d} folderPath={fp}
-              displayName={meta?.name || (p.cleanDisplay ? cleanDisplayName(d) : d)}
-              meta={meta}
-              isPinned={p.data.pinned.includes(fp)}
-              isHidden={p.data.hidden.includes(fp)}
-              watchedCount={wl.length} totalVideos={total}
-              onEnter={() => p.onEnter(fp, meta?.name || d)}
-              onContextMenu={e => p.onContextMenu(e, fp, meta?.name || d)}
-              selectMode={p.selectMode} isSelected={p.selectedPaths?.has(fp)}
-              onSelectToggle={p.onSelectToggle ? () => p.onSelectToggle(fp) : undefined}
-              enableAnimation={!p.selectMode && mountedRef.current}
-            />
-          )
-        })}
-      </AnimatePresence>
+    <div className="relative w-full h-full" onWheel={scrollReveal.onWheel}>
+      <VirtualList
+        items={listItems}
+        itemKey={itemKey}
+        rowHeight={44}
+        renderItem={renderItemList}
+        scrollKey={`video-library-list:${p.rootPath}`}
+      />
     </div>
   )
 }

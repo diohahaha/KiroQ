@@ -10,6 +10,8 @@ import { registerLibraryIpc } from './ipc/library'
 import { registerSettingsIpc } from './ipc/settings'
 import { registerPlayerIpc } from './ipc/player'
 import { registerBangumiIpc } from './ipc/bangumi'
+import { registerImageLibraryIpc } from './ipc/imageLibrary'
+import { flushImageStore } from './services/imageStore'
 import { thumbnailPath } from './services/thumbnail'
 import { IPC } from '../shared/types'
 
@@ -69,19 +71,26 @@ function createWindow(): void {
     geomTimer = setTimeout(saveWindowState, 800)
   })
 
-  // 右键菜单 IPC
+  // 右键菜单 IPC（支持一层子菜单，目前只有图片库"标记标签"用到）
   ipcMain.handle(IPC.WINDOW_CONTEXT_MENU, async (_event, items) => {
     return new Promise<string | null>((resolve) => {
-      const template = items.map((item: any) => {
-        if (item.type === 'separator') return { type: 'separator' as const }
-        return {
-          label: item.label, enabled: item.enabled !== false,
-          type: item.type === 'checkbox' ? ('checkbox' as const) : ('normal' as const),
-          checked: item.checked,
-          click: () => resolve(item.id),
-        }
-      })
-      Menu.buildFromTemplate(template).popup({
+      const buildTemplate = (list: any[]): Electron.MenuItemConstructorOptions[] =>
+        list.map((item: any) => {
+          if (item.type === 'separator') return { type: 'separator' as const }
+          const base: Electron.MenuItemConstructorOptions = {
+            label: item.label,
+            enabled: item.enabled !== false,
+          }
+          if (item.submenu && item.submenu.length > 0) {
+            base.submenu = buildTemplate(item.submenu)
+          } else {
+            base.type = item.type === 'checkbox' ? ('checkbox' as const) : ('normal' as const)
+            base.checked = item.checked
+            base.click = () => resolve(item.id)
+          }
+          return base
+        })
+      Menu.buildFromTemplate(buildTemplate(items)).popup({
         window: mainWindow!,
         callback: () => resolve(null),
       })
@@ -93,6 +102,8 @@ function createWindow(): void {
   } else {
     mainWindow.loadFile(path.join(__dirname, '..', 'dist', 'index.html'))
   }
+
+  mainWindow.webContents.openDevTools()
 
   mainWindow.on('closed', () => { mainWindow = null })
 }
@@ -116,6 +127,8 @@ app.whenReady().then(() => {
   }
 
   // 注册 kiroq:// 协议（缩略图 + 封面图）
+  // 注意：图片库的封面（图片原图/zip首图/epub封面）也统一走 thumbnailPath() 写盘，
+  // 复用同一个 kiroq://thumbnail/{hash} 协议，不需要新增协议分支。
   protocol.registerFileProtocol('kiroq', (request, callback) => {
     const raw = decodeURIComponent(request.url.replace('kiroq://', ''))
     const url = raw.split('?')[0] // 去掉 query 参数（缓存破坏用）
@@ -140,12 +153,13 @@ app.whenReady().then(() => {
   registerSettingsIpc(mainWindow!)
   registerPlayerIpc(mainWindow!)
   registerBangumiIpc()
+  registerImageLibraryIpc(mainWindow!)
 })
 
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') { flush(); app.quit() }
+  if (process.platform !== 'darwin') { flush(); flushImageStore(); app.quit() }
 })
-app.on('before-quit', () => flush())
+app.on('before-quit', () => { flush(); flushImageStore() })
 app.on('activate', () => {
   if (BrowserWindow.getAllWindows().length === 0) createWindow()
 })

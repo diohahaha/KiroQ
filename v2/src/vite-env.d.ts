@@ -15,6 +15,8 @@ declare global {
       bangumiDownloadCover: (url: string, saveDir: string) => Promise<string | null>
       pickImage: () => Promise<string | null>
       genericFetchJson: (url: string) => Promise<any>
+      // 视频库进度条修复：递归统计某文件夹（含子文件夹）视频总数
+      countVideos: (folderPath: string) => Promise<number>
     }
   }
 }

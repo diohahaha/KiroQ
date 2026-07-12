@@ -1,11 +1,6 @@
 /**
- * PotPlayer 窗口标题监控服务（PowerShell 实现，零原生依赖）。
- * 已核对旧版 utils.py _watch_player_thread()：
- *   - 用途：播放器运行期间轮询窗口标题，关闭后批量标记已看
- *   - 轮询间隔：2 秒
- *   - 启动延迟：1.5 秒
- *
- * 用 PowerShell 枚举窗口替代 node-window-manager（避免 native 编译问题）。
+ * PotPlayer 窗口标题监控 — 枚举所有 PotPlayer 进程窗口
+ * 已核对旧版 utils.py _watch_player_thread() + EnumWindows
  */
 import { BrowserWindow } from 'electron'
 import { exec } from 'child_process'
@@ -18,16 +13,15 @@ export interface WatchContext {
   folderPath: string
 }
 
-function getPotPlayerWindowTitle(pid: number): Promise<string | null> {
+/** PowerShell：获取所有 PotPlayer* 进程的可见窗口标题 */
+function getPotPlayerTitles(): Promise<string[]> {
   return new Promise((resolve) => {
-    const cmd = `Get-Process -Id ${pid} -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowTitle -ne '' } | Select-Object -ExpandProperty MainWindowTitle`
     exec(
-      `powershell -NoProfile -Command "${cmd}"`,
-      { timeout: 5000, windowsHide: true },
+      `powershell -NoProfile -Command "Get-Process -Name 'PotPlayer*','PotPlayerMini*' -ErrorAction SilentlyContinue | ForEach-Object { \$_.MainWindowTitle } | Where-Object { \$_ }"`,
+      { timeout: 5000, windowsHide: true, encoding: 'utf8' },
       (err, stdout) => {
-        if (err) { resolve(null); return }
-        const title = stdout.trim()
-        resolve(title || null)
+        if (err) { resolve([]); return }
+        resolve(stdout.split('\n').map(s => s.trim()).filter(Boolean))
       },
     )
   })
@@ -45,44 +39,34 @@ export function startWatching(
 
     watcherInterval = setInterval(async () => {
       try {
-        const alive = isProcessAlive(ctx.procPid)
-        if (!alive) {
+        // 检查是否有 PotPlayer 进程在运行
+        const titles = await getPotPlayerTitles()
+        if (titles.length === 0) {
+          // PotPlayer 关了 → 标记已看并停止
+          if (played.size > 0) {
+            onFinished(Array.from(played))
+          }
           stopWatching()
-          onFinished(Array.from(played))
           return
         }
 
-        const title = await getPotPlayerWindowTitle(ctx.procPid)
-        if (!title) return
-
-        // 匹配文件名（已核对旧版逻辑）
-        for (const v of ctx.videos) {
-          if (played.has(v)) continue
-          const nameNoExt = v.replace(/\.[^.]+$/, '')
-          if (title.includes(v) || title.startsWith(nameNoExt)) {
-            played.add(v)
-            mainWindow.webContents.send('player:titleChanged', title)
+        for (const title of titles) {
+          for (const v of ctx.videos) {
+            if (played.has(v)) continue
+            const noExt = v.replace(/\.[^.]+$/, '')
+            if (title.includes(v) || title.startsWith(noExt)) {
+              played.add(v)
+              mainWindow.webContents.send('player:titleChanged', title)
+            }
           }
         }
       } catch (e) {
         console.debug('[potplayerWatcher] error:', e)
       }
-    }, 2000) // 已核对旧版：轮询间隔 2 秒
-  }, 1500) // 已核对旧版：1.5 秒启动延迟
-}
-
-function isProcessAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0)
-    return true
-  } catch {
-    return false
-  }
+    }, 2000)
+  }, 1500)
 }
 
 export function stopWatching(): void {
-  if (watcherInterval) {
-    clearInterval(watcherInterval)
-    watcherInterval = null
-  }
+  if (watcherInterval) { clearInterval(watcherInterval); watcherInterval = null }
 }

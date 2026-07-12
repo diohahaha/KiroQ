@@ -21,6 +21,9 @@ interface AnimeCardProps {
   onSelectToggle?: () => void
   /** 是否启用 layout 动画（默认 true） */
   enableAnimation?: boolean
+  /** 卡片宽度(px)，配合缩放滑条使用。默认 160，即现在写死的尺寸——不传这个
+   * prop 或者传 160，渲染结果和改动前完全一样，像素级不变。 */
+  size?: number
 }
 
 const STATUS_EMOJI: Record<string, string> = {
@@ -33,6 +36,7 @@ export const AnimeCard = forwardRef<HTMLDivElement, AnimeCardProps>(function Ani
   onEnter, onContextMenu,
   selectMode, isSelected, onSelectToggle,
   enableAnimation = true,
+  size = 160,
 }, ref) {
   const handleClick = useCallback(() => {
     if (selectMode && onSelectToggle) { onSelectToggle(); return }
@@ -40,6 +44,13 @@ export const AnimeCard = forwardRef<HTMLDivElement, AnimeCardProps>(function Ani
   }, [selectMode, onSelectToggle, onEnter])
 
   const ratio = totalVideos > 0 ? Math.min(watchedCount / totalVideos, 1) : 0
+
+  // 封面区原比例是 154:200（卡片宽 160，左右各留 3px）。进度条+状态标签这两块
+  // 是固定高度不跟着缩放的文字/图标区域，图片库那边的卡片没有这两样，所以
+  // 这里的"卡片最小高度"换算比图片库多留了一点空间。
+  const coverW = size - 6
+  const coverH = Math.round(coverW * (200 / 154))
+  const cardMinHeight = coverH + 70
 
   const content = (
     <div
@@ -49,7 +60,7 @@ export const AnimeCard = forwardRef<HTMLDivElement, AnimeCardProps>(function Ani
         backgroundColor: isHidden ? 'var(--kq-hidden-card)' : 'var(--kq-bg-card)',
         borderColor: isSelected ? 'var(--kq-accent)' : isPinned ? 'var(--kq-border-pin)' : 'var(--kq-border)',
         borderWidth: isSelected ? 2 : 1,
-        width: 160, minHeight: 270,
+        width: size, minHeight: cardMinHeight,
       }}
       onClick={handleClick}
       onContextMenu={onContextMenu}
@@ -76,14 +87,14 @@ export const AnimeCard = forwardRef<HTMLDivElement, AnimeCardProps>(function Ani
       )}
 
       {/* 封面 */}
-      <div className="relative mx-[3px] mt-[6px] rounded-lg overflow-hidden" style={{ width: 154, height: 200 }}>
+      <div className="relative mx-[3px] mt-[6px] rounded-lg overflow-hidden" style={{ width: coverW, height: coverH }}>
         {meta?.cover ? (
           <img src={`kiroq://cover/${meta.cover}`} alt={displayName}
             className="w-full h-full object-cover"
             onError={e => { (e.target as HTMLImageElement).style.display = 'none' }} />
         ) : (
-          <div className="w-full h-full flex items-center justify-center text-4xl"
-            style={{ backgroundColor: 'var(--kq-bg-nav)' }}>🎬</div>
+          <div className="w-full h-full flex items-center justify-center"
+            style={{ backgroundColor: 'var(--kq-bg-nav)', fontSize: Math.max(coverW * 0.22, 20) }}>🎬</div>
         )}
         {/* 评分角标 — 右下角 */}
         {meta?.rating != null && meta.rating > 0 && (

@@ -37,6 +37,27 @@ export function registerSettingsIpc(mainWindow: BrowserWindow): void {
     return result.filePaths[0]
   })
 
+  // ── 图片库：图片/压缩包查看器 + 电子书阅读器 ──
+  ipcMain.handle(IPC.SETTINGS_PICK_IMAGE_VIEWER, async () => {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: '选择图片/压缩包查看器',
+      filters: [{ name: '可执行文件', extensions: ['exe'] }],
+      properties: ['openFile'],
+    })
+    if (result.canceled || result.filePaths.length === 0) return null
+    return result.filePaths[0]
+  })
+
+  ipcMain.handle(IPC.SETTINGS_PICK_EBOOK_VIEWER, async () => {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: '选择电子书阅读器',
+      filters: [{ name: '可执行文件', extensions: ['exe'] }],
+      properties: ['openFile'],
+    })
+    if (result.canceled || result.filePaths.length === 0) return null
+    return result.filePaths[0]
+  })
+
   ipcMain.handle(IPC.SETTINGS_GET, async () => {
     const fp = path.join(app.getPath('userData'), 'kiroq-settings.json')
     try {
