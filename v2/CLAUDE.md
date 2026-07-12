@@ -1,6 +1,6 @@
 # KiroQ 项目结构
 
-本地动漫观看进度管理工具，Electron + TypeScript + React + Zustand。
+本地视频图片管理工具，Electron + TypeScript + React + Zustand。
 
 ## 架构
 

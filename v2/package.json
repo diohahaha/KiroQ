@@ -1,7 +1,7 @@
 {
   "name": "kiroq",
   "version": "2.0.0",
-  "description": "本地动漫观看进度管理工具",
+  "description": "本地视频图片管理工具",
   "main": "dist-electron/main.js",
   "scripts": {
     "dev": "electron-vite dev",
